@@ -354,8 +354,20 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       return orig111.apply(this, arguments);
     };
 
-    // 2) 兜底护栏：同一条指令一帧内重复过多 → 让出本帧；持续空转 → 强制结束该解释器（防卡死）
+    // 2) 兜底护栏（19:30 卡死真正根因）：单帧内执行指令数超限即让出本帧，
+    //    连续空转超过约 2 秒则强制结束该解释器。
+    //
+    //    旧版只统计「同一指令索引」的重复次数，遇到含 2 条以上指令的循环
+    //    （Loop + 等待 + 计数 +=1 + If 计数==N 跳出）会彻底失效——
+    //    每轮循环 _index 在多条指令间来回切，单项计数永远到不了阈值，
+    //    于是 update() 的 while 在本帧内空转到死，主线程硬冻结、全局点不动。
+    //    改成统计「单帧总指令数」后，无论循环体有几条指令都能拦住。
+    //
+    //    另：旧版把空转计时 __wbSpinF 放在「每帧重置」里，导致跨帧累加永远到不了
+    //    阈值、强制结束形同虚设。这里改用「连续空转帧数」累加，跨帧正确累计。
     var origExec = P.executeCommand;
+    var WB_EXEC_BUDGET = 8000;    // 单帧最多执行的指令数（正常剧情节奏远小于此；死循环会瞬间打满）
+    var WB_SPIN_FRAMES = 120;     // 连续空转这么多帧（约 2 秒 @60fps）后强制结束该解释器
     P.__wbTerminate = function () {
       try {
         if (typeof this.clear === 'function') this.clear();
@@ -370,29 +382,27 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       } catch (e) {}
     };
     P.executeCommand = function () {
+      // 快进（__wbFF）模式引擎本就全速跑剧情：用更高的预算以免误伤长剧情，
+      // 但真·死循环仍会在约 2 秒后被强制结束。
+      var ff = (typeof window !== 'undefined' && window.__wbFF);
       var fr = (typeof Graphics !== 'undefined' && Graphics.frameCount) || 0;
-      var idx = this._index;
-      if (this.__wbF !== fr) { this.__wbF = fr; this.__wbLoopIdx = -1; this.__wbLoopN = 0; this.__wbSpinF = 0; }
-      if (this.__wbLoopIdx === idx) {
-        if (++this.__wbLoopN > 2000) {
-          this.__wbLoopN = 0;
-          this.__wbLoopIdx = -1;
-          // 同一指令本帧空转 2000+ 次 = 真·死循环（主线程不会冻结，但事件永远跑不完、
-          // 占用解释器导致点击无反应）。连续空转超过约 2 秒就强制结束该解释器，
-          // 让玩家立刻能继续操作，不必刷新页面。
-          if (!this.__wbSpinF) this.__wbSpinF = fr;
-          else if (fr - this.__wbSpinF > 120) {
-            this.__wbSpinF = 0;
-            this.__wbTerminate();
-            return false;
-          }
-          return false;            // 让出本帧
-        }
-      } else {
-        this.__wbLoopIdx = idx;
-        this.__wbLoopN = 1;
-        this.__wbSpinF = 0;
+      if (this.__wbF !== fr) {
+        // 新的一帧：根据上一帧是否撞预算来累加「连续空转帧数」，并复位本帧计数
+        this.__wbF = fr;
+        this.__wbSpinFrames = this.__wbBudgetHit ? (this.__wbSpinFrames || 0) + 1 : 0;
+        this.__wbBudgetHit = false;
+        this.__wbExecN = 0;
       }
+      if (!ff && this.__wbExecN >= WB_EXEC_BUDGET) {
+        this.__wbBudgetHit = true;            // 本帧撞预算，记一笔
+        if (this.__wbSpinFrames > WB_SPIN_FRAMES) {
+          this.__wbSpinFrames = 0;
+          this.__wbTerminate();              // 连续空转约 2 秒 → 强制结束，恢复点击
+          return false;
+        }
+        return false;                        // 让出本帧，下一帧继续（主线程不再硬冻结）
+      }
+      this.__wbExecN = (this.__wbExecN || 0) + 1;
       return origExec.apply(this, arguments);
     };
 
@@ -445,7 +455,7 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       return freed;
     };
 
-    console.log('[fix] 卡死修复已装载：计数器死循环放宽 + 输入等待循环每帧只判一次 + 同帧重复护栏 + 持续空转强制结束 + 遮罩卡死看门狗 + skipBranch 越界保护 + 数值锁定 + 手动强制恢复');
+    console.log('[fix] 卡死修复已装载：计数器死循环放宽(==→>=) + 输入等待循环每帧只判一次 + 单帧总指令预算护栏(覆盖多指令死循环) + 持续空转强制结束 + 遮罩卡死看门狗 + skipBranch 越界保护 + 数值锁定 + 手动强制恢复');
     return true;
   }
 
