@@ -14,6 +14,7 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
 (function () {
   var TARGET_JSON = /data\/CommonEvents\.json/i;
   var TARGET_ENGINE = /js\/rpg_objects\.js/i;
+  var WB_BUILD = '20261026a';  // 每次改动 script.js 请同步改 index.html 里的 ?v=
 
   /* ---------- 工具：定位 CommonEvents.json 里 id=100 的事件 ---------- */
   function findEventArray(text, id) {
@@ -619,7 +620,7 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       return freed;
     };
 
-    console.log('[fix] 卡死修复已装载：共享计数器按「每次循环自己的迭代数」纠正(并行事件清零不再饿死定时循环) + 计数器死循环放宽(==→>=) + 输入等待循环每帧只判一次 + 单帧总指令预算护栏(覆盖多指令死循环) + 持续空转强制结束 + 遮罩卡死看门狗 + skipBranch 越界保护 + 数值锁定 + 手动强制恢复');
+    console.log('[fix] build ' + WB_BUILD + ' 已装载：共享计数器按「每次循环自己的迭代数」纠正(并行事件清零不再饿死定时循环) + 计数器死循环放宽(==→>=) + 输入等待循环每帧只判一次 + 单帧总指令预算护栏(覆盖多指令死循环) + 持续空转强制结束 + 遮罩卡死看门狗 + skipBranch 越界保护 + 数值锁定 + 手动强制恢复');
     return true;
   }
 
@@ -1022,7 +1023,8 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
         '<div class="row"><button id="wb-exp">\u5bfc\u51fa\u5b58\u6863</button>' +
         '<button id="wb-imp" class="ghost">\u5bfc\u5165\u5b58\u6863</button></div>' +
         '<textarea id="wb-txt" rows="3" placeholder="\u5bfc\u51fa\u540e\u8fd9\u91cc\u4f1a\u51fa\u73b0\u4e00\u4e32\u4ee3\u7801\uff0c\u590d\u5236\u4fdd\u5b58\uff1b\u8981\u6062\u590d\u65f6\u7c98\u8d34\u56de\u6765\u518d\u70b9\u5bfc\u5165"></textarea>' +
-        '<div class="tip" id="wb-tip"></div>';
+        '<div class="tip" id="wb-tip"></div>' +
+        '<div style="margin-top:8px;font-size:11px;line-height:1.3;opacity:.45;text-align:right" id="wb-ver">build ' + WB_BUILD + '</div>';
       document.body.appendChild(pop);
 
       var tip = pop.querySelector('#wb-tip');
