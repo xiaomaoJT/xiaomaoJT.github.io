@@ -296,6 +296,140 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       while (this._index + 1 < L.length && L[this._index + 1].indent > this._indent) this._index++;
     };
 
+    /* ---------- 共享计数器死循环修复（19:30 点妹妹没反应 / 文字残留的根因） ----------
+     *
+     * 游戏把「计时」写成：
+     *     Loop { 等若干帧; If (计数器 == 目标) { 计数器 = 0; 跳出 }; 计数器 += 1 }
+     * 而「计数器」用的是**全事件共享**的通用变量（509 / 598 / 825 / 1067 …），
+     * 并没有每个循环各用一份。典型冲突：
+     *   · CE422「追加妹妹眨眼」（并行事件，立绘在场就一直跑）把 V509 当成自己的
+     *     帧计数：每帧 V509 += 1、数到随机值就清零重来 —— 它一直在**改写 V509**；
+     *   · 同一时刻 CE245「夜间命令菜单」（点妹妹后调用）也拿 V509 当计时循环的计数器。
+     * 两者抢同一个变量，CE245 这一侧的循环就可能被 CE422 清零/越过，永远等不到出循环，
+     * 于是 CE245 永久空转。而 CE245 在进入这段等待前**先把开关 10「点击妹妹」关掉**，
+     * 循环不结束就永远走不到末尾把它打开 →
+     *     · 点妹妹完全没反应（点击判定事件被这个开关关死了）
+     *     · 菜单文字/图片走不到 PSM_ERASE_POPUP → 画面留下别的场景的文字
+     *     · 进度卡住，怎么点都没用
+     * 之前那版把 `==` 放宽成 `>=`，只救得了「计数器被抬高/跳过目标」的情况，
+     * 救不了「被别人中途清零」——被清零后 `>=` 也永远成立不了。
+     *
+     * 修复：不再依赖那个共享变量。给每个「会结束的计时循环」记一份**自己的**迭代次数
+     * （进 Loop 时清零，每执行一次 REPEAT 加一），在 If 判定前把共享变量纠正回
+     * 「进入循环时的值 + 迭代次数」。这样别的并行事件怎么清零/改写都影响不到本次判定，
+     * 循环一定会在「真实迭代了 N 次」时正常走出。
+     */
+    var WB_META_MAX = 40000;      // 指令数超过这个的事件不分析（避免卡加载）
+
+    function wbBuildLoopMeta(list) {
+      var stack = [], loops = [], i, c, p;
+      for (i = 0; i < list.length; i++) {
+        c = list[i];
+        if (!c) continue;
+        if (c.code === 112) stack.push(i);
+        else if (c.code === 413 && stack.length) loops.push([stack.pop(), i]);
+      }
+      var meta = { rep: {}, inc: {}, cmp: {}, base: {} };
+      var hits = 0;
+      for (var li = 0; li < loops.length; li++) {
+        var s = loops[li][0], e = loops[li][1];
+        var lv = list[s].indent;
+        var cands = {}, k;
+        for (i = s + 1; i < e; i++) {
+          c = list[i]; p = c.parameters || [];
+          if (c.code === 122 && p[0] === p[1] && p[3] === 0 &&
+              (p[2] === 0 || p[2] === 1 || p[2] === 2)) cands[p[0]] = 1;
+        }
+        for (k in cands) {
+          if (!Object.prototype.hasOwnProperty.call(cands, k)) continue;
+          var C = +k, pure = true, incs = [], cmps = [], ifDepth = 0;
+          for (i = s + 1; i < e; i++) {
+            c = list[i]; p = c.parameters || [];
+            var code = c.code;
+            /* 只认「纯计时」写法：循环体内对该变量只有 初始化 / 自增 / 与常量比较，
+               任何别的读写（拿它当操作数、写进脚本）都说明它可能另有含义 → 不动它 */
+            if (code === 111) {
+              if (p[0] === 1 && p[1] === C) {
+                if (p[4] === 0 && typeof p[3] === 'number' && p[3] > 0) cmps.push(i);
+                else pure = false;
+              } else if (p[0] === 12 && String(p[1]).indexOf('value(' + C + ')') >= 0) {
+                pure = false;
+              }
+              if (c.indent === lv + 1) ifDepth++;
+            } else if (code === 412) {
+              if (c.indent === lv + 1 && ifDepth > 0) ifDepth--;
+            } else if (code === 122) {
+              if (p[0] === C && p[1] === C) {
+                if (p[3] !== 0 || (p[2] !== 0 && p[2] !== 1 && p[2] !== 2)) pure = false;
+                else if (p[2] === 1 && p[4] === 1 && c.indent === lv + 1 && ifDepth === 0) incs.push(i);
+              } else if (p[3] === 1 && p[4] === C) {
+                pure = false;
+              }
+            } else if (code === 355 || code === 655) {
+              if (String(p[0]).indexOf('value(' + C + ')') >= 0) pure = false;
+            }
+          }
+          /* 只认「会结束」的计时循环：循环体里必须有 113(跳出循环) 或 115(结束事件)。
+             纯动画用的「自循环计数器」没有 113/115（永远重置重数），那种不能动，
+             否则会把眨眼/呼吸这类循环的节奏也一起改掉。 */
+          var hasExit = false;
+          for (i = s + 1; i < e; i++) {
+            if (list[i] && (list[i].code === 113 || list[i].code === 115)) { hasExit = true; break; }
+          }
+          if (!pure || !incs.length || !cmps.length || !hasExit) continue;
+          meta.base[s] = C;
+          meta.rep[e] = s;
+          for (i = 0; i < incs.length; i++) meta.inc[incs[i]] = s;
+          for (i = 0; i < cmps.length; i++) meta.cmp[cmps[i]] = { s: s, v: C, t: list[cmps[i]].parameters[3] };
+          hits++;
+        }
+      }
+      return hits ? meta : null;
+    }
+
+    function wbLoopMeta(list) {
+      if (!list || !list.length) return null;
+      if (list.__wbLM !== undefined) return list.__wbLM;
+      var meta = null;
+      if (list.length < WB_META_MAX) {
+        try { meta = wbBuildLoopMeta(list); } catch (e) { meta = null; }
+      }
+      try { list.__wbLM = meta; } catch (e) {}
+      return meta;
+    }
+
+    // Loop 入口：记下本轮的起始值与迭代数
+    var orig112 = P.command112;
+    P.command112 = function () {
+      try {
+        var M = wbLoopMeta(this._list);
+        if (M && M.base[this._index] !== undefined) {
+          this.__wbIter = this.__wbIter || {};
+          this.__wbBase = this.__wbBase || {};
+          this.__wbIter[this._index] = 0;
+          this.__wbBase[this._index] = (typeof $gameVariables !== 'undefined' && $gameVariables)
+            ? ($gameVariables.value(M.base[this._index]) || 0) : 0;
+        }
+      } catch (e) {}
+      return orig112.apply(this, arguments);
+    };
+
+    // Repeat：迭代次数 +1（用真实迭代数，不信任被共享的计数器变量）
+    var orig413base = P.command413;
+    P.command413 = function () {
+      try {
+        var M = this._list && this._list.__wbLM;
+        if (M && M.rep[this._index] !== undefined) {
+          var s = M.rep[this._index];
+          this.__wbIter = this.__wbIter || {};
+          this.__wbIter[s] = (this.__wbIter[s] || 0) + 1;
+        }
+      } catch (e) {}
+      var r = orig413base.apply(this, arguments);
+      if (this._index < 0) this._index = 0;      // 缩进损坏时不至于把游标减成负数
+      return r;
+    };
+
     /* 数值锁定：只增不减。
        window.__wbLock 由右侧浮层面板控制（{14:1} 行动力 / {16:1} 精力 / {7:1} 金钱）。
        做成「只增不减」而不是「固定值」，是为了不打断游戏自己的初始化与跨日重置：
@@ -314,6 +448,27 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
     var orig111 = P.command111;
     P.command111 = function () {
       var p = this._params || [];
+
+      /* 0.5) 共享计数器「纠正」—— 19:30 卡死真正的修复点
+       * 配合上面的 command112 / command413：每个计时循环都记了自己的迭代次数
+       * __wbIter[s]（进 Loop 时清零，每跑一次 REPEAT 加一，完全不依赖那个被共享的变量）。
+       * 这里在「If (计数 == 目标)」判定之前，把共享变量强制改回
+       * 「进入循环时的值(__wbBase[s]) + 迭代次数(__wbIter[s])」。
+       * 于是并行事件（CE422 眨眼）每次把 V509 清零、或别处留下残值，都影响不到本次判定：
+       * 循环一定会在「真实迭代了 N 次」时通过，绝不会因被清零而饿死。
+       * 下面的 `==`→`>=` 放宽仍作兜底：万一残值偏高（从上方越过目标），也能立刻通过。 */
+      try {
+        var _M = this._list && this._list.__wbLM;
+        if (_M && _M.cmp[this._index] !== undefined) {
+          var _ci = _M.cmp[this._index];
+          var _cs = _ci.s;
+          var _base = (this.__wbBase && this.__wbBase[_cs]) || 0;
+          var _iter = (this.__wbIter && this.__wbIter[_cs]) || 0;
+          if (typeof $gameVariables !== 'undefined' && $gameVariables) {
+            $gameVariables.setValue(_ci.v, _base + _iter);
+          }
+        }
+      } catch (e) {}
 
       /* 0) 计数器死循环修复（第 2 天 19:30 卡死的根因）
        *
@@ -376,8 +531,14 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
         this._waitMode = '';
         this._waitCount = 0;
         this._childInterpreter = null;
+        /* 关键：夜间命令菜单(CE245)开头会把开关 10「点击妹妹」关掉，正常结束时才打开；
+           事件被强杀/卡死时这段「打开」永远走不到 → 强杀后妹妹永久点不动、
+           而且菜单留下的文字/立绘不会走到擦除逻辑 → 画面残留。
+           强杀本来就意味着有死循环在拖，这里兜底把门重新打开并清掉卡住的内容。 */
+        try { if (typeof $gameSwitches !== 'undefined' && $gameSwitches) $gameSwitches.setValue(10, 1); } catch (e) {}
+        try { if (typeof $gameMessage !== 'undefined' && $gameMessage && $gameMessage.clear) $gameMessage.clear(); } catch (e) {}
         if (typeof window !== 'undefined' && window.__wbNotify) {
-          window.__wbNotify('检测到卡死循环，已自动恢复（可继续操作，无需刷新）');
+          window.__wbNotify('检测到卡死循环，已自动恢复（点击已恢复、残留已清理，无需刷新）');
         }
       } catch (e) {}
     };
@@ -450,12 +611,15 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       } catch (e) {}
       try { if (typeof Graphics !== 'undefined' && Graphics.endLoading) Graphics.endLoading(); } catch (e) {}
       try { if (typeof $gameMessage !== 'undefined' && $gameMessage && $gameMessage.clear) $gameMessage.clear(); } catch (e) {}
+      /* 把「点击妹妹」的门重新打开：夜间命令菜单卡死时它停在 0，强杀后必须还原，
+         否则清完残留、妹妹依然点不动（这正是「还是不行」的关键之一）。 */
+      try { if (typeof $gameSwitches !== 'undefined' && $gameSwitches) $gameSwitches.setValue(10, 1); } catch (e) {}
       try { window.__wbCleanup && window.__wbCleanup(); } catch (e) {}
       try { window.__wbClearPics && window.__wbClearPics(); } catch (e) {}
       return freed;
     };
 
-    console.log('[fix] 卡死修复已装载：计数器死循环放宽(==→>=) + 输入等待循环每帧只判一次 + 单帧总指令预算护栏(覆盖多指令死循环) + 持续空转强制结束 + 遮罩卡死看门狗 + skipBranch 越界保护 + 数值锁定 + 手动强制恢复');
+    console.log('[fix] 卡死修复已装载：共享计数器按「每次循环自己的迭代数」纠正(并行事件清零不再饿死定时循环) + 计数器死循环放宽(==→>=) + 输入等待循环每帧只判一次 + 单帧总指令预算护栏(覆盖多指令死循环) + 持续空转强制结束 + 遮罩卡死看门狗 + skipBranch 越界保护 + 数值锁定 + 手动强制恢复');
     return true;
   }
 
