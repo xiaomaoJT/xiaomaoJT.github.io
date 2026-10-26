@@ -60,9 +60,14 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
     ];
   }
 
+  /* 关快进 + 把可能残留的消息窗口收干净（355 脚本指令里用） */
+  var WB_FF_OFF = 'window.__wbFF = 0;' +
+    ' try { window.__wbPurgeMessage && window.__wbPurgeMessage(true); } catch (e) {}' +
+    ' try { window.__wbFFBadge && window.__wbFFBadge(); } catch (e) {}';
+
   /* 快速跳 N 天：只推进日数 / 星期，把时间拨回早上 7 点，补满行动力与精力。
-     不走 CE329 的过夜演出，所以不黑屏、不播 BGM、不触发夜间 H 事件，胜在瞬间完成。
-     星期用 eval 取模一次算完，+30 天也不会算错。 */
+     不跑 CE329，所以**没有每日结算**——不黑屏、不播夜间事件，胜在瞬间完成，
+     但任务 / 剧情标记不会跟着更新。要「完整跳过一天」请用上面的快进过夜。 */
   function fastDays(indent, n) {
     return [
       Vadd(indent, 160, n),                                            // 经过日数 += n
@@ -104,7 +109,7 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
     /* 结构：外层循环包住顶层菜单 → 一次触发可以连续改多项，选「退出」才结束。
        全程没有任何提示文本、确认框、密码输入。 */
     b.push(C(112, 0));                                                   // 外层 Loop
-    b.push(C(102, 1, [['妹妹状态', '状态+金钱', '★逐项拉满', '★跳日期', '退出'], 4, 0, 2, 0]));
+    b.push(C(102, 1, [['妹妹状态', '状态+金钱', '★逐项拉满', '★跳日期', '★快进', '退出'], 5, 0, 2, 0]));
 
     /* ===== 1. 妹妹状态 ===== */
     b.push(C(402, 1, [0, '妹妹状态']));
@@ -167,19 +172,55 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
 
     /* ===== 4. ★跳日期 ===== */
     b.push(C(402, 1, [3, '★跳日期']));
-    b.push(C(102, 2, [['过 1 夜（完整结算）', '快速 +1 天', '快速 +7 天',
-                       '快速 +30 天', '返回'], 4, 0, 2, 0]));
-    b.push(C(402, 2, [0, '过 1 夜（完整结算）'])); b.push.apply(b, sleepNights(3, 1));
-    b.push(C(402, 2, [1, '快速 +1 天']));  b.push.apply(b, fastDays(3, 1));
-    b.push(C(402, 2, [2, '快速 +7 天']));  b.push.apply(b, fastDays(3, 7));
-    b.push(C(402, 2, [3, '快速 +30 天'])); b.push.apply(b, fastDays(3, 30));
-    b.push(C(402, 2, [4, '返回']));        b.push(C(0, 3));
-    b.push(C(403, 2, [4, null]));          b.push(C(0, 3));
+    b.push(C(102, 2, [['★快进过 1 夜（带结算）', '看过场过 1 夜',
+                       '快速 +1 天', '快速 +7 天', '快速 +30 天',
+                       '★快进跳过 7 天（带结算）', '返回'], 6, 0, 2, 0]));
+
+    /* 快进过 1 夜：开快进 → 117[329] 真的把每日结算跑完 → 关快进 + 清残留。
+       「天数变了但任务还在」就是只改日数、没跑结算造成的；这条路径是真跑。 */
+    b.push(C(402, 2, [0, '★快进过 1 夜（带结算）']));
+    b.push(C(355, 3, ['window.__wbFF = 1']));
+    b.push(C(117, 3, [329]));
+    b.push(C(355, 3, [WB_FF_OFF]));
+    b.push(C(117, 3, [217]));
+
+    b.push(C(402, 2, [1, '看过场过 1 夜'])); b.push.apply(b, sleepNights(3, 1));
+    b.push(C(402, 2, [2, '快速 +1 天']));  b.push.apply(b, fastDays(3, 1));
+    b.push(C(402, 2, [3, '快速 +7 天']));  b.push.apply(b, fastDays(3, 7));
+    b.push(C(402, 2, [4, '快速 +30 天'])); b.push.apply(b, fastDays(3, 30));
+
+    b.push(C(402, 2, [5, '★快进跳过 7 天（带结算）']));
+    b.push(C(355, 3, ['window.__wbFF = 1']));
+    for (var kk = 0; kk < 7; kk++) b.push(C(117, 3, [329]));
+    b.push(C(355, 3, [WB_FF_OFF]));
+    b.push(C(117, 3, [217]));
+
+    b.push(C(402, 2, [6, '返回']));  b.push(C(0, 3));
+    b.push(C(403, 2, [6, null]));    b.push(C(0, 3));
     b.push(C(404, 2));
 
-    /* ===== 5. 退出 ===== */
-    b.push(C(402, 1, [4, '退出']));  b.push(C(113, 2));                 // 跳出外层 Loop
-    b.push(C(403, 1, [4, null]));    b.push(C(113, 2));                 // 取消键 = 退出
+    /* ===== 5. ★快进 ===== */
+    b.push(C(402, 1, [4, '★快进']));
+    b.push(C(102, 2, [['快进：开（自动点完）', '快进：关',
+                       '选项自动选第 1 项', '选项自动选最后 1 项',
+                       '清理残留文字', '清掉屏幕立绘', '返回'], 6, 0, 2, 0]));
+    b.push(C(402, 2, [0, '快进：开（自动点完）']));
+    b.push(C(355, 3, ['try { window.__wbFFSet(1); } catch (e) { window.__wbFF = 1; }']));
+    b.push(C(402, 2, [1, '快进：关']));
+    b.push(C(355, 3, ['try { window.__wbFFSet(0); } catch (e) { window.__wbFF = 0; }']));
+    b.push(C(402, 2, [2, '选项自动选第 1 项']));   b.push(C(355, 3, ['window.__wbFFChoice = 0']));
+    b.push(C(402, 2, [3, '选项自动选最后 1 项'])); b.push(C(355, 3, ['window.__wbFFChoice = 1']));
+    b.push(C(402, 2, [4, '清理残留文字']));
+    b.push(C(355, 3, ['try { window.__wbCleanup(); } catch (e) {}']));
+    b.push(C(402, 2, [5, '清掉屏幕立绘']));
+    b.push(C(355, 3, ['try { window.__wbClearPics(); } catch (e) {}']));
+    b.push(C(402, 2, [6, '返回']));  b.push(C(0, 3));
+    b.push(C(403, 2, [6, null]));    b.push(C(0, 3));
+    b.push(C(404, 2));
+
+    /* ===== 6. 退出 ===== */
+    b.push(C(402, 1, [5, '退出']));  b.push(C(113, 2));                 // 跳出外层 Loop
+    b.push(C(403, 1, [5, null]));    b.push(C(113, 2));                 // 取消键 = 退出
     b.push(C(404, 1));
     b.push(C(413, 0));                                                  // 外层 Repeat
     b.push(C(0, 0));
@@ -232,6 +273,12 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
     var P = Game_Interpreter.prototype;
     if (P.__wbFixed) return true;
     P.__wbFixed = true;
+
+    /* 兜底：setupChoices 第一行就是 `t[0].clone()`。这游戏的 Array.prototype.clone
+       是运行时某个插件挂上去的，顺序一旦变化，所有选项都会直接抛错（菜单点不开）。 */
+    if (!Array.prototype.clone) {
+      Array.prototype.clone = function () { return this.slice(0); };
+    }
 
     /* 计数器变量白名单（离线精确匹配得出，20 个 / 879 处）。
        判据：出现在 112/413 循环体内、有 `变量 += 1`、且 `if 变量 == 目标`
@@ -330,12 +377,322 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
     return true;
   }
 
+  /* ---------- 快进：跳过剧情演出，同时如实跑完事件逻辑 ----------
+   *
+   * 为什么不能「直接中断事件」：
+   *   剧情事件把「已完成」写在自己的末尾（开开关、改变量、加任务）。
+   *   中途 terminate 等于这一整段剧情白跑 —— 任务永远不消失、日期跳了任务还挂着。
+   *   所以这里不掐断，而是把「等玩家点」的时间压到 0：事件照跑、标志照设、只是看不见过程。
+   *
+   * 三个等待来源，逐个压掉：
+   *   1) `Game_Interpreter.updateWait()` —— 消息(message) / 计时(_waitCount) / 移动 / 转移 等
+   *   2) `$gameMessage` 的选项与数字输入 —— 自动选一项（先 onChoice 设 _branch，再 terminateMessage）
+   *   3) `Window_Message` 的逐字渲染与开合动画 —— 快进时直接不渲染，杜绝文字残留
+   *
+   * 金手指菜单自身豁免：`window.__wbCheatList` 指向 CE100 的 list，
+   * 否则开快进后自己的菜单会被自动连点，无法操作。
+   */
+  function installFastForward() {
+    if (typeof Game_Interpreter === 'undefined' ||
+        typeof Window_Message === 'undefined' ||
+        typeof Game_Message === 'undefined') return false;
+    var W = window;
+    if (W.__wbFFReady) return true;
+    W.__wbFFReady = true;
+
+    W.__wbFF       = W.__wbFF || 0;    // 0 关 / 1 开
+    W.__wbFFChoice = W.__wbFFChoice || 0;  // 0 = 自动选第 1 项 / 1 = 自动选最后一项
+    W.__wbFFMsg    = 0;        // 累计跳过的对话条数
+    W.__wbFFAuto   = 0;        // 1 = 跑完一段后自动关
+    W.__wbCheatList = W.__wbCheatList || null;
+
+    /* 绑定金手指事件（CE100）的 list 引用：快进时豁免它，否则自己的菜单会被自动连点。
+       注意不能用 patchCheat 里那份 list —— 那是拦截 CommonEvents.json 文本时 parse 出来的
+       临时对象，引擎真正用的是后来重新解析的数组，两者不是同一个引用。 */
+    function bindCheatList() {
+      try {
+        var e = W.$dataCommonEvents && W.$dataCommonEvents[100];
+        if (e && e.list && e.list.length) { W.__wbCheatList = e.list; return true; }
+      } catch (err) {}
+      return false;
+    }
+    (function retryBind(n) {
+      if (bindCheatList()) return;
+      if (n > 300) return;
+      setTimeout(function () { retryBind(n + 1); }, 100);
+    })(0);
+
+    /* ---------- 找消息窗口：Scene_Map / Scene_Battle / 任何带 _windowLayer 的场景 ---------- */
+    function msgWin() {
+      try {
+        var sc = SceneManager._scene;
+        if (!sc) return null;
+        if (sc._messageWindow) return sc._messageWindow;
+        var wl = sc._windowLayer;
+        if (wl && wl.children) {
+          for (var i = 0; i < wl.children.length; i++) {
+            var c = wl.children[i];
+            if (c && typeof Window_Message !== 'undefined' && c instanceof Window_Message) return c;
+          }
+        }
+      } catch (e) {}
+      return null;
+    }
+    W.__wbMsgWin = msgWin;
+
+    function shutSub(w, key) {
+      try {
+        var s = w[key];
+        if (!s) return;
+        if (s.deactivate) s.deactivate();
+        if (s.close) s.close();
+        s.openness = 0;
+        s._opening = false;
+        s._closing = false;
+      } catch (e) {}
+    }
+
+    /* ---------- 清空消息层（这是「文字一直留在页面上」的正解） ----------
+     * 只 `$gameMessage.clear()` 不够：字已经画进 Window_Message 的 contents 位图里了，
+     * 窗口又停在半开状态，于是黑底上留着一行行文字。
+     * 必须同时：断掉 _textState（停止逐字渲染）→ 擦 contents → 关三条子窗口 → 关主窗 → 清数据。
+     */
+    function purgeMessage(auto) {
+      /* 正在等的是金手指自己的选项 —— 一个字节都不许动。
+         这条分支是被 Window_Message.update 的兜底撞上的：那里只知道「快进开着」，
+         并不知道屏幕上等的是谁的选项。标记由 setupChoices 每次重算，不会残留。 */
+      if (W.__wbChoiceIsCheat) return false;
+      var g = W.$gameMessage;
+      if (g && auto !== false) {
+        try {
+          if (g.isChoice && g.isChoice()) {
+            var n = g.choices().length;
+            var pick = W.__wbFFChoice ? n - 1 : 0;
+            if (pick < 0) pick = 0;
+            if (pick >= n) pick = n - 1;
+            g.onChoice(pick);            // 先设 _branch，再清 —— 顺序反了剧情会走错分支
+          } else if (g.isNumberInput && g.isNumberInput()) {
+            try { W.$gameVariables.setValue(g._numInputVariableId, 0); } catch (e2) {}
+          } else if (g.isItemChoice && g.isItemChoice()) {
+            try { g.onChoice(0); } catch (e2) {}
+          }
+        } catch (e) {}
+      }
+      var w = msgWin();
+      if (w) {
+        try { w._textState = null; } catch (e) {}
+        try { w.pause = false; } catch (e) {}
+        try { w._waitCount = 0; } catch (e) {}
+        try { w._showFast = false; w._lineShowFast = false; w._pauseSkip = false; } catch (e) {}
+        shutSub(w, '_choiceWindow');
+        shutSub(w, '_numberWindow');
+        shutSub(w, '_itemWindow');
+        try { if (w.contents) w.contents.clear(); } catch (e) {}
+        try { w.terminateMessage(); } catch (e) {}     // close() + $gameMessage.clear()
+        try { w.openness = 0; w._opening = false; w._closing = false; } catch (e) {}
+        try {
+          var gw = w._goldWindow;
+          if (gw) { gw.openness = 0; gw._opening = false; gw._closing = false; }
+        } catch (e) {}
+      }
+      if (g) { try { g.clear(); } catch (e) {} }
+      W.__wbFFMsg++;
+      return true;
+    }
+    W.__wbPurgeMessage = purgeMessage;
+
+    /* ---------- 这条解释器该不该被快进 ---------- */
+    function skipMe(it) {
+      if (!W.__wbFF) return false;
+      if (!it || it.__wbNoFF) return false;
+      if (W.__wbCheatList && it._list === W.__wbCheatList) return false;   // 金手指菜单豁免
+      return true;
+    }
+
+    var P = Game_Interpreter.prototype;
+
+    /* 标记「当前等的这一屏选项是不是金手指自己的」。
+       每次 setup 都重算，所以不会残留到下一条剧情。 */
+    W.__wbChoiceIsCheat = 0;
+    function markChoice(it) {
+      W.__wbChoiceIsCheat = (W.__wbCheatList && it._list === W.__wbCheatList) ? 1 : 0;
+    }
+    ['setupChoices', 'setupNumInput', 'setupItemChoice'].forEach(function (k) {
+      var o = P[k];
+      if (typeof o !== 'function') return;
+      P[k] = function () {
+        markChoice(this);
+        return o.apply(this, arguments);
+      };
+    });
+
+    /* 剧情文本一出现就解除豁免 —— 金手指菜单里一条 101 都没有，
+       所以任何 101 都只可能是剧情，不能因为上一次是菜单就漏清。 */
+    var orig101 = P.command101;
+    P.command101 = function () {
+      W.__wbChoiceIsCheat = 0;
+      return orig101.apply(this, arguments);
+    };
+
+    /* 1) 等待全部短路：计时归零、消息清掉、其余等待直接放行 */
+    var origWait = P.updateWait;
+    P.updateWait = function () {
+      if (!skipMe(this)) return origWait.apply(this, arguments);
+      /* 地图传送必须等完：这一步不结束就继续跑，后面的事件会在错误的地图上执行 */
+      if (this._waitMode === 'transfer') return origWait.apply(this, arguments);
+      if (this._waitCount > 0) this._waitCount = 0;
+      /* 不能只看 _waitMode === 'message'：被中途掐断的剧情会留下「没人认领」的
+         文本（_waitMode 已经空了），那正是页面上擦不掉的那几行字。 */
+      var gm = W.$gameMessage;
+      if (this._waitMode === 'message' || (gm && gm.isBusy && gm.isBusy())) purgeMessage(true);
+      this._waitMode = '';
+      return false;
+    };
+
+    /* 2) 消息窗口在快进期间根本不渲染：断掉逐字状态 + 保持全关
+     *    但金手指菜单的选项要正常显示，否则快进一开就看不见菜单了。 */
+    var origWMUpdate = Window_Message.prototype.update;
+    Window_Message.prototype.update = function () {
+      if (W.__wbFF && !W.__wbChoiceIsCheat) {
+        this._textState = null;
+        this.pause = false;
+        this._waitCount = 0;
+        if (this.openness > 0) {
+          try { if (this.contents) this.contents.clear(); } catch (e) {}
+          this.openness = 0;
+          this._opening = false;
+          this._closing = false;
+        }
+        try {
+          var gw = this._goldWindow;
+          if (gw && gw.openness > 0) { gw.openness = 0; gw._opening = false; gw._closing = false; }
+        } catch (e) {}
+        var g = W.$gameMessage;
+        if (g && g.isBusy && g.isBusy()) purgeMessage(true);
+        return;
+      }
+      return origWMUpdate.apply(this, arguments);
+    };
+
+    /* ---------- 是否还有剧情在跑 ----------
+     * 只看主解释器和消息层。并行事件（眨眼之类）永远在跑，不能算进来。
+     * 不在大地图（战斗 / 菜单 / 载入）时一律视为「还没结束」。
+     */
+    function busy() {
+      try {
+        var g = W.$gameMessage;
+        if (g && g.isBusy && g.isBusy()) return true;
+        var sc = SceneManager._scene;
+        var isMap = !!(sc && typeof Scene_Map !== 'undefined' && sc instanceof Scene_Map);
+        if (!isMap) return true;
+        var it = W.$gameMap && W.$gameMap._interpreter;
+        if (it && it.isRunning()) return true;
+        if (W.$gameTemp && W.$gameTemp.isCommonEventReserved && W.$gameTemp.isCommonEventReserved()) return true;
+      } catch (e) {}
+      return false;
+    }
+    W.__wbBusy = busy;
+
+    /* ---------- 战斗里自动「攻击」：不这么做快进会卡在指令选择 ----------
+     * 只按第一项（Attack）→ 第一个敌人，够用来过掉剧情战。
+     */
+    function autoBattle() {
+      try {
+        var sc = SceneManager._scene;
+        if (!sc || typeof Scene_Battle === 'undefined' || !(sc instanceof Scene_Battle)) return false;
+        if (!W.BattleManager || !W.BattleManager.isInputting || !W.BattleManager.isInputting()) return false;
+        if (W.BattleManager.isBusy && W.BattleManager.isBusy()) return false;
+        var w = sc._actorCommandWindow;
+        if (w && w.active && w.maxItems && w.maxItems() > 0) { w.select(0); w.processOk(); return true; }
+        var e = sc._enemyWindow;
+        if (e && e.active && e.maxItems && e.maxItems() > 0) { e.select(0); e.processOk(); return true; }
+        var a = sc._actorWindow;
+        if (a && a.active && a.maxItems && a.maxItems() > 0) { a.select(0); a.processOk(); return true; }
+      } catch (err) {}
+      return false;
+    }
+
+    /* ---------- 开关 ---------- */
+    W.__wbFFSet = function (on) {
+      W.__wbFF = on ? 1 : 0;
+      if (!on) { try { if (W.__wbCleanup) W.__wbCleanup(); } catch (e) {} }
+      try { if (W.__wbFFBadge) W.__wbFFBadge(); } catch (e) {}
+      return W.__wbFF;
+    };
+
+    /* ---------- 「跳过本段」：开快进 → 一直跑到没有剧情 → 自动关 + 清理 ---------- */
+    W.__wbFFRun = function (maxMs) {
+      W.__wbFF = 1;
+      W.__wbFFMsg = 0;
+      W.__wbFFAuto = 1;
+      var t0 = Date.now();
+      function stop(msg) {
+        W.__wbFF = 0;
+        W.__wbFFAuto = 0;
+        try { if (W.__wbCleanup) W.__wbCleanup(); } catch (e) {}
+        try { if (W.__wbFFBadge) W.__wbFFBadge(); } catch (e) {}
+        try { if (W.__wbNotify) W.__wbNotify(msg); } catch (e) {}
+      }
+      var iv = setInterval(function () {
+        if (!W.__wbFF) { clearInterval(iv); return; }
+        try { autoBattle(); } catch (e) {}
+        if (!busy()) { clearInterval(iv); stop('已跳过本段剧情'); return; }
+        if (maxMs && Date.now() - t0 > maxMs) {
+          clearInterval(iv);
+          stop('超过时限，已停止快进');
+        }
+      }, 80);
+      return true;
+    };
+
+    /* ---------- 清理残留：不动剧情，只把画面上的字与图片收干净 ---------- */
+    W.__wbCleanup = function () {
+      var g = W.$gameMessage;
+      try { if (g) g.clear(); } catch (e) {}
+      var w = msgWin();
+      if (w) {
+        try { w._textState = null; } catch (e) {}
+        try { w.pause = false; } catch (e) {}
+        try { w._waitCount = 0; } catch (e) {}
+        try { if (w.contents) w.contents.clear(); } catch (e) {}
+        shutSub(w, '_choiceWindow');
+        shutSub(w, '_numberWindow');
+        shutSub(w, '_itemWindow');
+        try { w.openness = 0; w._opening = false; w._closing = false; } catch (e) {}
+        try { w._goldWindow.openness = 0; } catch (e) {}
+      }
+      try {
+        var it = W.$gameMap && W.$gameMap._interpreter;
+        if (it && it._waitMode === 'message') it._waitMode = '';
+        var ch = it && it._childInterpreter;
+        if (ch && ch._waitMode === 'message') ch._waitMode = '';
+      } catch (e) {}
+      return true;
+    };
+
+    /* ---------- 清掉屏幕上多余的立绘 / 图片（残留头像是这个原因） ---------- */
+    W.__wbClearPics = function () {
+      try { if (W.$gameScreen) W.$gameScreen.clearPictures(); } catch (e) {}
+      try {
+        var sc = SceneManager._scene;
+        var sp = sc && sc._spriteset;
+        if (sp && sp._pictureContainer) {
+          sp._pictureContainer.children.forEach(function (s) { if (s) s.visible = false; });
+        }
+      } catch (e) {}
+      return true;
+    };
+
+    console.log('[ff] 快进已就绪（对话 / 选项 / 计时 / 战斗指令）');
+    return true;
+  }
+
   function injectWatchdog() {
     try {
       if (document.getElementById('wb-watchdog')) return;
       var s = document.createElement('script');
       s.id = 'wb-watchdog';
-      s.textContent = '(' + installEngineFix.toString() + ')();';
+      s.textContent = '(' + installEngineFix.toString() + ')();(' + installFastForward.toString() + ')();';
       (document.head || document.documentElement).appendChild(s);
     } catch (e) { console.warn('[fix] 看门狗注入失败', e); }
   }
@@ -375,7 +732,12 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
         '#wb-pop textarea{width:100%;box-sizing:border-box;margin-top:9px;padding:8px;border-radius:9px;',
         'border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#ddd;',
         'font-size:11px;font-family:ui-monospace,Menlo,monospace;resize:vertical;word-break:break-all}',
-        '#wb-pop .tip{margin-top:7px;font-size:11px;color:#9e9e9e;min-height:15px;line-height:1.4}'
+        '#wb-pop .tip{margin-top:7px;font-size:11px;color:#9e9e9e;min-height:15px;line-height:1.4}',
+        '#wb-pop{max-height:78vh;overflow-y:auto;-webkit-overflow-scrolling:touch}',
+        '#wb-pop .sec{margin:10px 0 7px;font-size:11px;color:#9e9e9e;letter-spacing:.5px}',
+        '#wb-pop .sec:first-of-type{margin-top:2px}',
+        '#wb-pop button.on{background:#d32f2f}',
+        '#wb-pop button.on:active{background:#e53935}'
       ].join('');
       (document.head || document.documentElement).appendChild(css);
 
@@ -388,12 +750,20 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       pop.id = 'wb-pop';
       pop.innerHTML =
         '<div class="h"><b>\u5b58\u6863 / \u4f5c\u5f0a</b><span class="x" id="wb-x">\u2715</span></div>' +
-        '<div class="row"><button id="wb-exp">\u5bfc\u51fa\u5b58\u6863</button>' +
-        '<button id="wb-imp" class="ghost">\u5bfc\u5165\u5b58\u6863</button></div>' +
+        '<div class="sec">\u5267\u60c5</div>' +
+        '<div class="row"><button id="wb-skip">\u8df3\u8fc7\u672c\u6bb5\u5267\u60c5</button>' +
+        '<button id="wb-ff" class="ghost">\u5feb\u8fdb\uff1a\u5173</button></div>' +
+        '<div class="row"><button id="wb-clr" class="ghost">\u6e05\u7406\u6b8b\u7559</button>' +
+        '<button id="wb-pic" class="ghost">\u6e05\u7acb\u7ed8</button></div>' +
+        '<div class="row"><button id="wb-opt" class="ghost">\u9009\u9879\uff1a\u7b2c 1 \u9879</button></div>' +
+        '<div class="sec">\u6570\u503c\u9501\u5b9a</div>' +
         '<label><input type="checkbox" data-v="14">\u884c\u52a8\u529b\u4e0d\u51cf</label>' +
         '<label><input type="checkbox" data-v="16">\u7cbe\u529b\u4e0d\u51cf</label>' +
         '<label><input type="checkbox" data-v="7">\u91d1\u94b1\u4e0d\u51cf</label>' +
-        '<textarea id="wb-txt" rows="4" placeholder="\u5bfc\u51fa\u540e\u8fd9\u91cc\u4f1a\u51fa\u73b0\u4e00\u4e32\u4ee3\u7801\uff0c\u590d\u5236\u4fdd\u5b58\uff1b\u8981\u6062\u590d\u65f6\u7c98\u8d34\u56de\u6765\u518d\u70b9\u5bfc\u5165"></textarea>' +
+        '<div class="sec">\u5b58\u6863</div>' +
+        '<div class="row"><button id="wb-exp">\u5bfc\u51fa\u5b58\u6863</button>' +
+        '<button id="wb-imp" class="ghost">\u5bfc\u5165\u5b58\u6863</button></div>' +
+        '<textarea id="wb-txt" rows="3" placeholder="\u5bfc\u51fa\u540e\u8fd9\u91cc\u4f1a\u51fa\u73b0\u4e00\u4e32\u4ee3\u7801\uff0c\u590d\u5236\u4fdd\u5b58\uff1b\u8981\u6062\u590d\u65f6\u7c98\u8d34\u56de\u6765\u518d\u70b9\u5bfc\u5165"></textarea>' +
         '<div class="tip" id="wb-tip"></div>';
       document.body.appendChild(pop);
 
@@ -408,6 +778,70 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       });
       pop.addEventListener('click', function (e) { e.stopPropagation(); });
       pop.querySelector('#wb-x').addEventListener('click', function () { pop.classList.remove('on'); });
+
+      /* ---------- 剧情：快进 / 跳过本段 / 清理残留 ---------- */
+      var ffBtn = pop.querySelector('#wb-ff');
+      var optBtn = pop.querySelector('#wb-opt');
+      window.__wbLock = window.__wbLock || {};
+      window.__wbFFChoice = window.__wbFFChoice || 0;
+
+      // 让引擎那边能把状态同步到面板（快进自动停止时也会走到这里）
+      window.__wbFFBadge = function () {
+        var on = !!window.__wbFF;
+        try {
+          fab.style.background = on ? 'rgba(211,47,47,.92)' : 'rgba(126,87,194,.55)';
+          fab.style.borderColor = on ? 'rgba(255,255,255,.75)' : 'rgba(255,255,255,.35)';
+          fab.textContent = on ? '\u23e9' : '\u2699';
+          ffBtn.textContent = on ? '\u5feb\u8fdb\uff1a\u5f00' : '\u5feb\u8fdb\uff1a\u5173';
+          if (on) ffBtn.classList.add('on'); else ffBtn.classList.remove('on');
+        } catch (e) {}
+      };
+      window.__wbNotify = function (m) { try { say(m); } catch (e) {} };
+
+      function needFF() {
+        if (typeof window.__wbFFRun === 'function') return true;
+        say('\u5f15\u64ce\u8fd8\u6ca1\u5c31\u7eea\uff0c\u7b49\u6e38\u620f\u8fdb\u5230\u5927\u5730\u56fe\u518d\u8bd5');
+        return false;
+      }
+
+      ffBtn.addEventListener('click', function () {
+        if (!needFF()) return;
+        window.__wbFFSet(!window.__wbFF);
+        say(window.__wbFF
+          ? '\u5feb\u8fdb\u4e2d\u2014\u2014\u5bf9\u8bdd\u3001\u9009\u9879\u3001\u7b49\u5f85\u5168\u90e8\u81ea\u52a8\u8df3\u8fc7\uff0c\u5267\u60c5\u5185\u5bb9\u7167\u6837\u6267\u884c'
+          : '\u5df2\u5173\u95ed\u5feb\u8fdb');
+      });
+
+      pop.querySelector('#wb-skip').addEventListener('click', function () {
+        if (!needFF()) return;
+        window.__wbFFRun(180000);
+        say('\u6b63\u5728\u8df3\u8fc7\u672c\u6bb5\u5267\u60c5\u2026\u8dd1\u5b8c\u4f1a\u81ea\u52a8\u505c');
+      });
+
+      pop.querySelector('#wb-clr').addEventListener('click', function () {
+        if (typeof window.__wbCleanup !== 'function') { say('\u5f15\u64ce\u8fd8\u6ca1\u5c31\u7eea'); return; }
+        window.__wbCleanup();
+        say('\u5df2\u6e05\u6389\u6b8b\u7559\u6587\u5b57');
+      });
+
+      pop.querySelector('#wb-pic').addEventListener('click', function () {
+        if (typeof window.__wbClearPics !== 'function') { say('\u5f15\u64ce\u8fd8\u6ca1\u5c31\u7eea'); return; }
+        window.__wbClearPics();
+        say('\u5df2\u6e05\u6389\u5c4f\u5e55\u4e0a\u7684\u7acb\u7ed8 / \u56fe\u7247\n\u5982\u679c\u628a UI \u56fe\u4e5f\u6e05\u4e86\uff0c\u5207\u6362\u4e00\u6b21\u5730\u56fe\u5c31\u6062\u590d');
+      });
+
+      optBtn.addEventListener('click', function () {
+        window.__wbFFChoice = window.__wbFFChoice ? 0 : 1;
+        optBtn.textContent = window.__wbFFChoice
+          ? '\u9009\u9879\uff1a\u6700\u540e 1 \u9879'
+          : '\u9009\u9879\uff1a\u7b2c 1 \u9879';
+        say(window.__wbFFChoice
+          ? '\u5267\u60c5\u9009\u9879\u5c06\u81ea\u52a8\u9009\u6700\u540e\u4e00\u9879\uff08\u901a\u5e38\u662f\u300c\u79bb\u5f00 / \u53d6\u6d88\u300d\uff09'
+          : '\u5267\u60c5\u9009\u9879\u5c06\u81ea\u52a8\u9009\u7b2c\u4e00\u9879\uff08\u901a\u5e38\u662f\u300c\u7ee7\u7eed\u300d\uff09');
+      });
+
+      if (window.__wbFFChoice) optBtn.textContent = '\u9009\u9879\uff1a\u6700\u540e 1 \u9879';
+      window.__wbFFBadge();
 
       // 导出：把所有 "RPG " 开头的键（存档槽 / Global / Config）拼成 JSON
       pop.querySelector('#wb-exp').addEventListener('click', function () {
@@ -524,7 +958,11 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
   }, 80);
 
   var wt = setInterval(function () {
-    try { if (installEngineFix()) clearInterval(wt); } catch (e) { clearInterval(wt); }
+    try {
+      var a = installEngineFix();
+      var b = installFastForward();
+      if (a && b) clearInterval(wt);
+    } catch (e) { clearInterval(wt); }
   }, 150);
 
   /* 面板兜底：游戏用 document.write 重写整页，DOM 就绪后再挂一次 */
