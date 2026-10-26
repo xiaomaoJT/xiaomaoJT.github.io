@@ -14,7 +14,11 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
 (function () {
   var TARGET_JSON = /data\/CommonEvents\.json/i;
   var TARGET_ENGINE = /js\/rpg_objects\.js/i;
-  var WB_BUILD = '20261026a';  // 每次改动 script.js 请同步改 index.html 里的 ?v=
+  var WB_BUILD = '20261027a';  // 每次改动 script.js 请同步改 index.html 里的 ?v=
+  /* 诊断开关：?wbpatch=0 → 只跑加载器，不装任何补丁（金手指 / 卡死修复 / 面板 / 快进）
+     用于排查「到底是游戏本身还是补丁引起的问题」。 */
+  var WB_OFF = false;
+  try { WB_OFF = /wbpatch=0/.test(String(location.href)); } catch (e) {}
 
   /* ---------- 工具：定位 CommonEvents.json 里 id=100 的事件 ---------- */
   function findEventArray(text, id) {
@@ -58,6 +62,15 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       V(indent + 2, 6, 0),
       C(412, indent + 1),
       C(412, indent)
+    ];
+  }
+
+  /* 跳完时段后统一刷新：重算昼夜标志 + 刷新右上角时钟。
+     金手指直接改 V4（小时）不会自动更新 V64/V65/V69，会导致夜间事件页不激活 → 点不动。 */
+  function timeFinalize(indent) {
+    return [
+      C(355, indent, ['try { window.__wbSyncDayNight && window.__wbSyncDayNight(); } catch(e){}']),
+      C(117, indent, [217])
     ];
   }
 
@@ -127,12 +140,12 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
     b.push(C(402, 2, [6, '★跳时段']));
     b.push(C(102, 3, [['+1 小时', '+3 小时', '→ 17:00 傍晚', '→ 20:00 夜里',
                        '→ 23:00 深夜', '→ 06:00 清晨', '返回'], 6, 0, 2, 0]));
-    b.push(C(402, 3, [0, '+1 小时'])); b.push.apply(b, addHours(4, 1));
-    b.push(C(402, 3, [1, '+3 小时'])); b.push.apply(b, addHours(4, 3));
-    b.push(C(402, 3, [2, '→ 17:00 傍晚'])); b.push(V(4, 4, 17)); b.push(V(4, 5, 0));
-    b.push(C(402, 3, [3, '→ 20:00 夜里'])); b.push(V(4, 4, 20)); b.push(V(4, 5, 0));
-    b.push(C(402, 3, [4, '→ 23:00 深夜'])); b.push(V(4, 4, 23)); b.push(V(4, 5, 0));
-    b.push(C(402, 3, [5, '→ 06:00 清晨'])); b.push(V(4, 4, 6));  b.push(V(4, 5, 0));
+    b.push(C(402, 3, [0, '+1 小时'])); b.push.apply(b, addHours(4, 1)); b.push.apply(b, timeFinalize(4));
+    b.push(C(402, 3, [1, '+3 小时'])); b.push.apply(b, addHours(4, 3)); b.push.apply(b, timeFinalize(4));
+    b.push(C(402, 3, [2, '→ 17:00 傍晚'])); b.push(V(4, 4, 17)); b.push(V(4, 5, 0)); b.push.apply(b, timeFinalize(4));
+    b.push(C(402, 3, [3, '→ 20:00 夜里'])); b.push(V(4, 4, 20)); b.push(V(4, 5, 0)); b.push.apply(b, timeFinalize(4));
+    b.push(C(402, 3, [4, '→ 23:00 深夜'])); b.push(V(4, 4, 23)); b.push(V(4, 5, 0)); b.push.apply(b, timeFinalize(4));
+    b.push(C(402, 3, [5, '→ 06:00 清晨'])); b.push(V(4, 4, 6));  b.push(V(4, 5, 0)); b.push.apply(b, timeFinalize(4));
     b.push(C(402, 3, [6, '返回']));         b.push(C(0, 4));
     b.push(C(403, 3, [6, null]));           b.push(C(0, 4));
     b.push(C(404, 3));
@@ -183,17 +196,21 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
     b.push(C(355, 3, ['window.__wbFF = 1']));
     b.push(C(117, 3, [329]));
     b.push(C(355, 3, [WB_FF_OFF]));
+    b.push(C(355, 3, ['try { window.__wbSyncDayNight && window.__wbSyncDayNight(); } catch(e){}']));
     b.push(C(117, 3, [217]));
 
     b.push(C(402, 2, [1, '看过场过 1 夜'])); b.push.apply(b, sleepNights(3, 1));
-    b.push(C(402, 2, [2, '快速 +1 天']));  b.push.apply(b, fastDays(3, 1));
-    b.push(C(402, 2, [3, '快速 +7 天']));  b.push.apply(b, fastDays(3, 7));
-    b.push(C(402, 2, [4, '快速 +30 天'])); b.push.apply(b, fastDays(3, 30));
+    b.push(C(355, 3, ['try { window.__wbSyncDayNight && window.__wbSyncDayNight(); } catch(e){}']));
+    b.push(C(117, 3, [217]));
+    b.push(C(402, 2, [2, '快速 +1 天']));  b.push.apply(b, fastDays(3, 1)); b.push.apply(b, timeFinalize(3));
+    b.push(C(402, 2, [3, '快速 +7 天']));  b.push.apply(b, fastDays(3, 7)); b.push.apply(b, timeFinalize(3));
+    b.push(C(402, 2, [4, '快速 +30 天'])); b.push.apply(b, fastDays(3, 30)); b.push.apply(b, timeFinalize(3));
 
     b.push(C(402, 2, [5, '★快进跳过 7 天（带结算）']));
     b.push(C(355, 3, ['window.__wbFF = 1']));
     for (var kk = 0; kk < 7; kk++) b.push(C(117, 3, [329]));
     b.push(C(355, 3, [WB_FF_OFF]));
+    b.push(C(355, 3, ['try { window.__wbSyncDayNight && window.__wbSyncDayNight(); } catch(e){}']));
     b.push(C(117, 3, [217]));
 
     b.push(C(402, 2, [6, '返回']));  b.push(C(0, 3));
@@ -620,7 +637,71 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       return freed;
     };
 
-    console.log('[fix] build ' + WB_BUILD + ' 已装载：共享计数器按「每次循环自己的迭代数」纠正(并行事件清零不再饿死定时循环) + 计数器死循环放宽(==→>=) + 输入等待循环每帧只判一次 + 单帧总指令预算护栏(覆盖多指令死循环) + 持续空转强制结束 + 遮罩卡死看门狗 + skipBranch 越界保护 + 数值锁定 + 手动强制恢复');
+    /* ---------- 昼夜标志同步 + 孤儿对话看门狗（19:30 之后点不动 / 文字残留的关键兜底） ----------
+     * 游戏用 V64=深夜 / V65=昼 / V69=夜 三个标志来决定事件页（而非直接读 V4 小时），
+     * 这些标志只在特定时点由事件设置，金手指直接改 V4 不会自动更新它们，
+     * 于是「吃完饭 V69=1 但 V65 没清零」之类的不一致会让夜间事件页永远不激活 → 点妹妹没反应。
+     * __wbSyncDayNight() 按小时重新算一遍这三个标志（与游戏自身的 partOf 一致），
+     * 每次跳时段后调用，保证标志与真实时刻一致。 */
+    window.__wbSyncDayNight = function () {
+      try {
+        if (typeof $gameVariables === 'undefined' || !$gameVariables) return;
+        var h = $gameVariables.value(4);
+        if (typeof h !== 'number' || isNaN(h)) h = 12;
+        var p = (h <= 4 || h >= 23) ? 2 : (h >= 19 ? 1 : 0);   // 2=深夜 1=夜 0=昼
+        $gameVariables.setValue(64, p === 2 ? 1 : 0);
+        $gameVariables.setValue(65, p === 0 ? 1 : 0);
+        $gameVariables.setValue(69, p === 1 ? 1 : 0);
+      } catch (e) {}
+    };
+
+    /* 判断 $gameMessage.isBusy() 是不是「孤儿残留」。
+     * 关键：地图上永远有并行的常驻事件（眨眼/呼吸等）在跑，所以「有没有解释器在跑」
+     * 不能作为判据——它一直为真，会让我们永远不清。真正区分孤儿对话的是：
+     *   真在等玩家看对话/选项时，产生它的那条解释器处在 _waitMode==='message'；
+     *   孤儿对话则「没人认领」——isBusy 为真，却没有任何解释器在等消息/选项。
+     * 因此只要「isBusy 且找不到任何 _waitMode==='message' 的解释器」就判定为孤儿。 */
+    function wbMessageOrphaned() {
+      try {
+        var gm = window.$gameMessage;
+        if (!gm || !gm.isBusy || !gm.isBusy()) return false;
+        if (window.__wbFF) return false;                 // 快进自己会清
+        var m = window.$gameMap;
+        if (m && m._interpreter && m._interpreter._waitMode === 'message') return false;
+        if (m && m._interpreters) for (var i = 0; i < m._interpreters.length; i++) {
+          var a = m._interpreters[i]; if (a && a._waitMode === 'message') return false;
+        }
+        if (m && m._commonEvents) for (var j = 0; j < m._commonEvents.length; j++) {
+          var b = m._commonEvents[j]; if (b && b._waitMode === 'message') return false;
+        }
+        return true;   // 忙碌但没有任何解释器在等消息 → 孤儿残留
+      } catch (e) { return false; }
+    }
+    window.__wbMessageOrphaned = wbMessageOrphaned;
+
+    /* 孤儿对话看门狗：持续约 2 秒的「isBusy 但没人等消息」即强制收掉这屏孤儿对话，
+     * 并重新打开开关 10「点击妹妹」。这是「夜晚吃完饭点不动 + 屏幕残留文字」的自动解药，
+     * 无需刷新、无需手动点强制恢复。并行/常驻事件一直在跑也不会误伤（它们不处于 wait('message')）。 */
+    if (!window.__wbOrphanWatch) {
+      window.__wbOrphanWatch = true;
+      var __wbOrphanMs = 0;
+      setInterval(function () {
+        try {
+          if (!wbMessageOrphaned()) { __wbOrphanMs = 0; return; }
+          __wbOrphanMs += 500;
+          if (__wbOrphanMs >= 2000) {
+            __wbOrphanMs = 0;
+            var gm = window.$gameMessage;
+            try { if (typeof window.__wbPurgeMessage === 'function') window.__wbPurgeMessage(true); } catch (e2) {}
+            try { if (gm && gm.clear) gm.clear(); } catch (e2) {}
+            try { if (typeof $gameSwitches !== 'undefined' && $gameSwitches) $gameSwitches.setValue(10, 1); } catch (e2) {}
+            try { if (window.__wbNotify) window.__wbNotify('已自动清理一屏卡住的对话（点击已恢复，无需刷新）'); } catch (e2) {}
+          }
+        } catch (e) {}
+      }, 500);
+    }
+
+    console.log('[fix] build ' + WB_BUILD + ' 已装载：共享计数器按「每次循环自己的迭代数」纠正(并行事件清零不再饿死定时循环) + 计数器死循环放宽(==→>=) + 输入等待循环每帧只判一次 + 单帧总指令预算护栏(覆盖多指令死循环) + 持续空转强制结束 + 遮罩卡死看门狗 + skipBranch 越界保护 + 数值锁定 + 手动强制恢复 + 昼夜标志同步(__wbSyncDayNight) + 孤儿对话看门狗(夜晚点不动自动恢复)');
     return true;
   }
 
@@ -995,19 +1076,49 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
         '#wb-pop .sec{margin:10px 0 7px;font-size:11px;color:#9e9e9e;letter-spacing:.5px}',
         '#wb-pop .sec:first-of-type{margin-top:2px}',
         '#wb-pop button.on{background:#d32f2f}',
-        '#wb-pop button.on:active{background:#e53935}'
+        '#wb-pop button.on:active{background:#e53935}',
+        '#wb-pop{touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}',
+        '#wb-fab{touch-action:none}',
+        '#wb-pop .bar{height:7px;border-radius:4px;background:rgba(255,255,255,.12);overflow:hidden;margin:6px 0 2px}',
+        '#wb-pop .bar>i{display:block;height:100%;width:0;background:#7e57c2;transition:width .2s}',
+        '#wb-pop .cache{font-size:12px;color:#bdbdbd;margin:2px 0 4px;word-break:break-all}',
+        '#wb-pop .cheatgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}',
+        '#wb-pop .cheatgrid button{width:100%}'
       ].join('');
       (document.head || document.documentElement).appendChild(css);
 
       var fab = document.createElement('div');
       fab.id = 'wb-fab';
       fab.textContent = '\u2699';
+      try {
+        var __sp = JSON.parse(localStorage.getItem('wbFabPos') || 'null');
+        if (__sp) {
+          if (__sp.left) { fab.style.left = __sp.left; fab.style.right = 'auto'; }
+          if (__sp.right) { fab.style.right = __sp.right; fab.style.left = 'auto'; }
+          if (__sp.top) { fab.style.top = __sp.top; fab.style.bottom = 'auto'; }
+          if (__sp.bottom) { fab.style.bottom = __sp.bottom; fab.style.top = 'auto'; }
+        }
+      } catch (e) {}
       document.body.appendChild(fab);
 
       var pop = document.createElement('div');
       pop.id = 'wb-pop';
       pop.innerHTML =
-        '<div class="h"><b>\u5b58\u6863 / \u4f5c\u5f0a</b><span class="x" id="wb-x">\u2715</span></div>' +
+        '<div class="h"><b>\u4f5c\u5f0a / \u5b58\u6863</b><span class="x" id="wb-x">\u2715</span></div>' +
+        '<div class="sec">\u91d1\u624b\u6307\uff08\u5df2\u5408\u5e76\u6e38\u620f\u5185\u4f5c\u5f0a\u83dc\u5355\uff09</div>' +
+        '<div class="row"><button id="wb-cheat">\u6253\u5f00\u91d1\u624b\u6307\u83dc\u5355</button></div>' +
+        '<div class="cheatgrid">' +
+        '<button id="wb-money">\u91d1\u94b1\u62c9\u6ee1</button>' +
+        '<button id="wb-trust">\u59b9\u59b9\u4fe1\u8d56+10</button>' +
+        '<button id="wb-love">\u59b9\u6027\u6b32+20</button>' +
+        '<button id="wb-mood">\u59b9\u597d\u5fc3\u60c5</button>' +
+        '</div>' +
+        '<div class="cheatgrid">' +
+        '<button id="wb-t17">\u8df3\u523017:00</button>' +
+        '<button id="wb-t20">\u8df3\u523020:00\u591c</button>' +
+        '<button id="wb-t23">\u8df3\u523023:00\u6df1\u591c</button>' +
+        '<button id="wb-t06">\u8df3\u523006:00\u6668</button>' +
+        '</div>' +
         '<div class="sec">\u5267\u60c5</div>' +
         '<div class="row"><button id="wb-skip">\u8df3\u8fc7\u672c\u6bb5\u5267\u60c5</button>' +
         '<button id="wb-ff" class="ghost">\u5feb\u8fdb\uff1a\u5173</button></div>' +
@@ -1019,6 +1130,11 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
         '<label><input type="checkbox" data-v="14">\u884c\u52a8\u529b\u4e0d\u51cf</label>' +
         '<label><input type="checkbox" data-v="16">\u7cbe\u529b\u4e0d\u51cf</label>' +
         '<label><input type="checkbox" data-v="7">\u91d1\u94b1\u4e0d\u51cf</label>' +
+        '<div class="sec">\u79bb\u7ebf\u7f13\u5b58\uff08\u4e00\u6b21\u4e0b\u8f7d\u540e\u53ef\u79bb\u7ebf\u73a9\uff09</div>' +
+        '<div class="cache" id="wb-cache">\u672a\u7f13\u5b58</div>' +
+        '<div class="bar"><i id="wb-bar"></i></div>' +
+        '<div class="row"><button id="wb-dl">\u4e0b\u8f7d\u6574\u5305\uff08\u79bb\u7ebf\uff09</button>' +
+        '<button id="wb-clrc" class="ghost">\u5f3a\u5236\u6e05\u7f13\u5b58(\u4fdd\u7559\u5b58\u6863)</button></div>' +
         '<div class="sec">\u5b58\u6863</div>' +
         '<div class="row"><button id="wb-exp">\u5bfc\u51fa\u5b58\u6863</button>' +
         '<button id="wb-imp" class="ghost">\u5bfc\u5165\u5b58\u6863</button></div>' +
@@ -1032,8 +1148,10 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
 
       function say(m) { tip.textContent = m; }
 
+      window.__wbFabMoved = false;
       fab.addEventListener('click', function (e) {
         e.stopPropagation();
+        if (window.__wbFabMoved) { window.__wbFabMoved = false; return; }
         pop.classList.toggle('on');
       });
       pop.addEventListener('click', function (e) { e.stopPropagation(); });
@@ -1110,6 +1228,105 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
         say('\u5df2\u5f3a\u5236\u6062\u590d ' + n + ' \u4e2a\u5361\u4f4f\u7684\u4e8b\u4ef6\uff0c\u53ef\u7ee7\u7eed\u64cd\u4f5c\uff08\u65e0\u9700\u5237\u65b0\uff09');
       });
 
+      /* ---------- 金手指（合并游戏内作弊菜单） ---------- */
+      function onMap() {
+        try { var sc = window.SceneManager && SceneManager._scene; return !!sc && (typeof Scene_Map !== 'undefined') && (sc instanceof Scene_Map); } catch (e) { return false; }
+      }
+      function busyNow() {
+        try { if (window.__wbFF) return true; if (typeof window.__wbBusy === 'function') return window.__wbBusy(); } catch (e) {}
+        return false;
+      }
+      function ensureIdle() {
+        if (!onMap()) { say('\u8bf7\u5148\u8fdb\u5165\u5927\u5730\u56fe\u518d\u4f7f\u7528'); return false; }
+        if (busyNow()) { say('\u5f53\u524d\u6709\u5267\u60c5\u5728\u64ad\u653e\uff0c\u7ed3\u675f\u540e\u518d\u8bd5'); return false; }
+        return true;
+      }
+      function gv(id) { try { return window.$gameVariables.value(id); } catch (e) { return 0; } }
+      function setGV(id, v) { try { window.$gameVariables.setValue(id, v); return true; } catch (e) { say('\u5931\u8d25\uff1a' + e); return false; } }
+
+      pop.querySelector('#wb-cheat').addEventListener('click', function () {
+        if (!onMap()) { say('\u8bf7\u5148\u8fdb\u5165\u5927\u5730\u56fe'); return; }
+        if (busyNow()) { say('\u6709\u5267\u60c5\u6b63\u5728\u64ad\u653e\uff0c\u7ed3\u675f\u540e\u518d\u5f00'); return; }
+        try { window.$gameTemp.reserveCommonEvent(100); pop.classList.remove('on'); say('\u91d1\u624b\u6307\u83dc\u5355\u5df2\u6253\u5f00'); }
+        catch (e) { say('\u6253\u5f00\u5931\u8d25\uff1a' + e); }
+      });
+      pop.querySelector('#wb-money').addEventListener('click', function () {
+        if (!ensureIdle()) return; if (setGV(7, 999999)) say('\u91d1\u94b1\u5df2\u62c9\u6ee1');
+      });
+      pop.querySelector('#wb-trust').addEventListener('click', function () {
+        if (!ensureIdle()) return; if (setGV(21, gv(21) + 10)) say('\u59b9\u59b9\u4fe1\u8d56 +10');
+      });
+      pop.querySelector('#wb-love').addEventListener('click', function () {
+        if (!ensureIdle()) return; if (setGV(102, gv(102) + 20)) say('\u59b9\u6027\u6b32 +20');
+      });
+      pop.querySelector('#wb-mood').addEventListener('click', function () {
+        if (!ensureIdle()) return; if (setGV(23, 8)) say('\u59b9\u597d\u5fc3\u60c5');
+      });
+      function jumpTo(h, label) {
+        if (!ensureIdle()) return;
+        try {
+          window.$gameVariables.setValue(4, h); window.$gameVariables.setValue(5, 0);
+          if (window.__wbSyncDayNight) window.__wbSyncDayNight();
+          if (window.$gameTemp) window.$gameTemp.reserveCommonEvent(217);
+          say('\u5df2\u8df3\u5230 ' + label);
+        } catch (e) { say('\u5931\u8d25\uff1a' + e); }
+      }
+      pop.querySelector('#wb-t17').addEventListener('click', function () { jumpTo(17, '17:00 \u5029\u665a'); });
+      pop.querySelector('#wb-t20').addEventListener('click', function () { jumpTo(20, '20:00 \u591c\u91cc'); });
+      pop.querySelector('#wb-t23').addEventListener('click', function () { jumpTo(23, '23:00 \u6df1\u591c'); });
+      pop.querySelector('#wb-t06').addEventListener('click', function () { jumpTo(6, '06:00 \u6e05\u6668'); });
+
+      /* ---------- 离线缓存：下载整包 + 状态 + 强制清缓存（保留存档） ---------- */
+      var cacheEl = pop.querySelector('#wb-cache');
+      var barEl = pop.querySelector('#wb-bar');
+      var SHARDS = 112;
+      function setBar(done, total) { try { barEl.style.width = (total ? Math.round(done / total * 100) : 0) + '%'; } catch (e) {} }
+      function refreshCacheStatus() {
+        if (!('caches' in window)) { cacheEl.textContent = '\u5f53\u524d\u6d4f\u89c8\u5668\u4e0d\u652f\u6301\u79bb\u7ebf\u7f13\u5b58'; return; }
+        try {
+          caches.open('wbgame-data-v1').then(function (c) { return c.keys(); }).then(function (reqs) {
+            var n = reqs ? reqs.length : 0;
+            cacheEl.textContent = n > 0 ? ('\u5df2\u7f13\u5b58 ' + n + ' / ' + SHARDS + ' \u4e2a\u5206\u7247') : '\u672a\u7f13\u5b58\uff08\u70b9\u4e0b\u9762\u6309\u94ae\u4e0b\u8f7d\uff09';
+          }).catch(function () { cacheEl.textContent = '\u672a\u7f13\u5b58'; });
+        } catch (e) { cacheEl.textContent = '\u672a\u7f13\u5b58'; }
+      }
+      function cacheShards() {
+        if (!('caches' in window)) { say('\u6b64\u6d4f\u89c8\u5668\u4e0d\u652f\u6301 Cache API\uff0c\u65e0\u6cd5\u79bb\u7ebf\u7f13\u5b58'); return; }
+        say('\u5f00\u59cb\u4e0b\u8f7d\u6574\u5305\uff08\u7ea6 500MB\uff0c\u8bf7\u4fdd\u6301\u9875\u9762\u6253\u5f00\uff09\u2026');
+        setBar(0, SHARDS);
+        caches.open('wbgame-data-v1').then(function (cache) {
+          var done = 0;
+          (function step(i) {
+            if (i > SHARDS) { say('\u5df2\u5168\u90e8\u7f13\u5b58\uff08' + SHARDS + ' \u4e2a\u5206\u7247\uff09\uff0c\u53ef\u79bb\u7ebf\u6e38\u73a9'); refreshCacheStatus(); return; }
+            var url = 'data/' + i + '.zip';
+            cache.match(url, { ignoreSearch: true }).then(function (hit) {
+              if (hit) { done++; setBar(done, SHARDS); return step(i + 1); }
+              fetch(url).then(function (r) { if (!r.ok) throw new Error('http' + r.status); return cache.put(new Request(url), r.clone()); })
+                .then(function () { done++; setBar(done, SHARDS); step(i + 1); })
+                .catch(function () { done++; setBar(done, SHARDS); step(i + 1); }); // 单文件失败跳过，不中断
+            }).catch(function () { done++; setBar(done, SHARDS); step(i + 1); });
+          })(1);
+        }).catch(function (e) { say('\u7f13\u5b58\u5931\u8d25\uff1a' + e); });
+      }
+      pop.querySelector('#wb-dl').addEventListener('click', cacheShards);
+      pop.querySelector('#wb-clrc').addEventListener('click', function () {
+        try {
+          if (!window.confirm('\u786e\u5b9a\u6e05\u9664\u9875\u9762\u7f13\u5b58\uff1f\u6e38\u620f\u5b58\u6863\u4f1a\u88ab\u4fdd\u7559\uff0c\u4f46\u9700\u91cd\u65b0\u52a0\u8f7d\u9875\u9762\u3002')) return;
+          var saves = {};
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (k && k.indexOf('RPG ') === 0) saves[k] = localStorage.getItem(k);
+          }
+          localStorage.clear();
+          for (var k2 in saves) localStorage.setItem(k2, saves[k2]);
+          if ('caches' in window) caches.keys().then(function (ks) { ks.forEach(function (k) { if (/^wbgame/.test(k)) caches.delete(k); }); });
+          say('\u5df2\u6e05\u9664\u9875\u9762\u7f13\u5b58\uff0c\u5b58\u6863\u5df2\u4fdd\u7559\uff0c\u6b63\u5728\u91cd\u65b0\u52a0\u8f7d\u2026');
+          setTimeout(function () { location.reload(true); }, 600);
+        } catch (e) { say('\u6e05\u9664\u5931\u8d25\uff1a' + e); }
+      });
+      // 每次打开弹窗刷新缓存状态
+      fab.addEventListener('click', function () { try { if (pop.classList.contains('on')) refreshCacheStatus(); } catch (e) {} });
+
       // 导出：把所有 "RPG " 开头的键（存档槽 / Global / Config）拼成 JSON
       pop.querySelector('#wb-exp').addEventListener('click', function () {
         var data = {}, n = 0;
@@ -1162,13 +1379,45 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
           });
         })(boxes[bi]);
       }
+      /* ---------- FAB 可拖动 + 吸边 ---------- */
+      (function makeDraggable(elm) {
+        var dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+        function r() { return elm.getBoundingClientRect(); }
+        function start(x, y) { dragging = true; var b = r(); ox = b.left; oy = b.top; sx = x; sy = y; elm.style.transition = 'none'; }
+        function move(x, y) {
+          if (!dragging) return;
+          if (Math.abs(x - sx) > 4 || Math.abs(y - sy) > 4) window.__wbFabMoved = true;
+          var b = r();
+          var nx = Math.max(0, Math.min(ox + (x - sx), window.innerWidth - b.width));
+          var ny = Math.max(0, Math.min(oy + (y - sy), window.innerHeight - b.height));
+          elm.style.left = nx + 'px'; elm.style.top = ny + 'px'; elm.style.right = 'auto'; elm.style.bottom = 'auto';
+        }
+        function end() {
+          if (!dragging) return; dragging = false;
+          var b = r(); var cx = b.left + b.width / 2;
+          if (cx < window.innerWidth / 2) { elm.style.left = '10px'; elm.style.right = 'auto'; }
+          else { elm.style.right = '10px'; elm.style.left = 'auto'; }
+          try { localStorage.setItem('wbFabPos', JSON.stringify({ left: elm.style.left, right: elm.style.right, top: elm.style.top, bottom: elm.style.bottom })); } catch (e) {}
+          elm.style.transition = 'left .15s,right .15s,top .15s';
+        }
+        elm.addEventListener('touchstart', function (e) { var t = e.touches[0]; start(t.clientX, t.clientY); }, { passive: true });
+        elm.addEventListener('touchmove', function (e) { if (!dragging) return; e.preventDefault(); var t = e.touches[0]; move(t.clientX, t.clientY); }, { passive: false });
+        elm.addEventListener('touchend', end, { passive: true });
+        elm.addEventListener('mousedown', function (e) {
+          e.preventDefault(); start(e.clientX, e.clientY);
+          function mm(e2) { move(e2.clientX, e2.clientY); }
+          function mu() { end(); document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); }
+          document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+        });
+      })(fab);
+
     } catch (e) { console.warn('[panel] 挂载失败', e); }
   }
 
   /* ---------- 响应拦截 ---------- */
   function installed() { return window.__wbInstalled; }
   function install() {
-    if (installed()) return;
+    if (installed() || WB_OFF) return;
     var proto = XMLHttpRequest.prototype;
     /* 加载器会覆写 XMLHttpRequest.prototype.open/send（内部用 _param 标记），
        必须等它装好之后再包装，否则补丁会被覆盖。 */
@@ -1182,25 +1431,54 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
     proto.send = function (body) {
       var xhr = this;
       var url = xhr.__wbUrl || '';
-      if (!xhr.__wbPatched && (TARGET_JSON.test(url) || TARGET_ENGINE.test(url))) {
+      var isShard = /(?:^|\/)data\/[0-9]+\.zip(\?[^#]*)?$/i.test(url) || /^[0-9]+\.zip$/i.test(url);
+      if (!xhr.__wbPatched) {
         xhr.__wbPatched = true;
-        var orig = xhr.onload;
-        xhr.onload = function () {
-          try {
-            var txt = xhr.responseText;
-            if (typeof txt === 'string' && txt.length) {
-              if (TARGET_JSON.test(url)) {
-                var r = patchCommonEvents(txt);
-                if (r) {
-                  Object.defineProperty(xhr, 'responseText', { value: r.text, configurable: true });
-                  Object.defineProperty(xhr, 'response', { value: r.text, configurable: true });
-                  console.log('[cheat] 金手指已增强：' + r.notes.join('、') + '；回想码 828266 已自动填充');
+        /* 离线优先：数据分片若在 Cache API 里就直接喂回去（离线可玩），否则走网络。
+           没有缓存时完全走原路径，不影响正常在线加载；只有「已下载整包」后才启用。 */
+        if (isShard && typeof caches !== 'undefined') {
+          var _realSend = _send;
+          xhr.send = function (b) {
+            try {
+              caches.match(url, { ignoreSearch: true }).then(function (resp) {
+                if (resp) {
+                  resp.arrayBuffer().then(function (buf) {
+                    try { Object.defineProperty(xhr, 'response', { value: buf, configurable: true }); } catch (e) {}
+                    try { Object.defineProperty(xhr, 'responseText', { value: (typeof TextDecoder !== 'undefined' ? new TextDecoder().decode(buf) : ''), configurable: true }); } catch (e) {}
+                    try { Object.defineProperty(xhr, 'status', { value: 200, configurable: true }); } catch (e) {}
+                    try { Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true }); } catch (e) {}
+                    try { if (typeof xhr.onload === 'function') xhr.onload(); } catch (e) {}
+                    try { if (typeof xhr.onreadystatechange === 'function') xhr.onreadystatechange(); } catch (e) {}
+                    try { xhr.dispatchEvent(new Event('load')); } catch (e) {}
+                  });
+                } else {
+                  _realSend.call(xhr, b);
+                }
+              }).catch(function () { _realSend.call(xhr, b); });
+            } catch (e) { _realSend.apply(xhr, arguments); }
+            return;
+          };
+          return;
+        }
+        if (TARGET_JSON.test(url) || TARGET_ENGINE.test(url)) {
+          var orig = xhr.onload;
+          xhr.onload = function () {
+            try {
+              var txt = xhr.responseText;
+              if (typeof txt === 'string' && txt.length) {
+                if (TARGET_JSON.test(url)) {
+                  var r = patchCommonEvents(txt);
+                  if (r) {
+                    Object.defineProperty(xhr, 'responseText', { value: r.text, configurable: true });
+                    Object.defineProperty(xhr, 'response', { value: r.text, configurable: true });
+                    console.log('[cheat] 金手指已增强：' + r.notes.join('、') + '；回想码 828266 已自动填充');
+                  }
                 }
               }
-            }
-          } catch (e) { console.warn('[cheat] 补丁失败', e); }
-          return orig && orig.apply(xhr, arguments);
-        };
+            } catch (e) { console.warn('[cheat] 补丁失败', e); }
+            return orig && orig.apply(xhr, arguments);
+          };
+        }
       }
       return _send.apply(this, arguments);
     };
@@ -1212,6 +1490,7 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
   var _write = document.write;
   document.write = function () {
     var r = _write.apply(document, arguments);
+    if (WB_OFF) return r;
     try { install(); } catch (e) {}
     try { injectWatchdog(); } catch (e) {}
     try { installPanel(); } catch (e) {}
@@ -1219,26 +1498,30 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
   };
 
   /* 兜底轮询 + 看门狗轮询（等引擎 JS 加载完） */
-  var timer = setInterval(function () {
-    try { install(); } catch (e) { clearInterval(timer); }
-    if (installed()) { clearInterval(timer); }
-  }, 80);
+  if (!WB_OFF) {
+    var timer = setInterval(function () {
+      try { install(); } catch (e) { clearInterval(timer); }
+      if (installed()) { clearInterval(timer); }
+    }, 80);
 
-  var wt = setInterval(function () {
-    try {
-      var a = installEngineFix();
-      var b = installFastForward();
-      if (a && b) clearInterval(wt);
-    } catch (e) { clearInterval(wt); }
-  }, 150);
+    var wt = setInterval(function () {
+      try {
+        var a = installEngineFix();
+        var b = installFastForward();
+        if (a && b) clearInterval(wt);
+      } catch (e) { clearInterval(wt); }
+    }, 150);
 
-  /* 面板兜底：游戏用 document.write 重写整页，DOM 就绪后再挂一次 */
-  var pt = setInterval(function () {
-    try {
-      if (document.getElementById('wb-fab')) clearInterval(pt);
-      else installPanel();
-    } catch (e) {}
-  }, 400);
+    /* 面板兜底：游戏用 document.write 重写整页，DOM 就绪后再挂一次 */
+    var pt = setInterval(function () {
+      try {
+        if (document.getElementById('wb-fab')) clearInterval(pt);
+        else installPanel();
+      } catch (e) {}
+    }, 400);
+  } else {
+    console.log('[wb] ?wbpatch=0：已跳过全部补丁（金手指 / 卡死修复 / 面板 / 快进），只跑加载器');
+  }
 })();
 
 if(~location.href.indexOf("?xiaomao"))!function(){var t=window.reinex64||"",i=window.lyreine||function(i){return t+i};XMLHttpRequest.prototype.L=XMLHttpRequest.prototype.open,XMLHttpRequest.prototype.Y=XMLHttpRequest.prototype.send;var e=function(){var t={L:function(t){return new Blob([t])}};if(t.Ly=window.LTT,"undefined"==typeof TextDecoder)t.ly=function(t){var i,e=new Array(t.length);for(i=0;i<t.length;i++)e[i]=String.fromCharCode(t[i]);return decodeURIComponent(escape(e.join("")))},t.LY=function(t){var i,e=unescape(encodeURIComponent(t)),n=new Uint8Array(e.length);for(i=0;i<e.length;i++)n[i]=e.charCodeAt(i);return n};else{var i=new TextDecoder;t.ly=function(t){return i.decode(t)};var e=new TextEncoder;t.LY=function(t){return e.encode(t)}}function n(t){this.Ly=function(t){return null==t},this.ly=t}n.prototype.Y=[function(t){return t},t.Ly,0,0],n.prototype.md=[t.ly,t.L],n.prototype.L=function(t){this.Iy=function(t,i){return this.ly.subarray(t,i)},this.length=this.ly.byteLength,this.YI=function(t,i,e){return e(this.Iy(t,i))},r.LY(this),function(){this.yl=function(t,i,e){if(this.Ly(e))return this.md[t](this.LY(i));"function"==typeof e&&this.LY(i,function(i){e(this.md[t](i))}.bind(this))},this.yL=function(t){var i;return(i="number"==typeof t?this.arr[t]:this.obj[t]).refer&&(i=this.arr[i.refer-1]),i},this.LY=function(t,i){var e=this.yL(t);if(this.Ly(i))return this.Y[e.Y](this.Iy(e.l,e.u));"function"==typeof i&&this.YI(e.l,e.u,function(t){i(this.Y[e.Y](t))}.bind(this))},this.b=this.yl.bind(this,0),this.t=this.yl.bind(this,1)}.call(this),t()};var r={L:function(t,i){var e=new DataView(t.buffer);e.getInt32(0),i.h=1,i.len=e.getUint32(4),i.start=i.len+8},Y:function(i,e,n){e.h&&(i=t.Ly(i));var r=0,o=e.start;function s(){var t,e=0;do{e=e<<7|127&(t=i[r++])}while(128&t);return e}function h(){return String.fromCharCode.apply(null,i.subarray(r,r+=4))}for(var a=s(),u=[],p={},c=0;c<a;c++){var f=s(),l=h(),y=i[r++];u.push(p[l]={l:o,u:o+=f,size:f,filename:l,Y:y})}for(a=s(),c=0;c<a;c++){var d=s();l=h(),u.push(p[l]={refer:d,filename:l})}n.arr=u,n.obj=p,n._data=i},LY:function(t){var i,e={};this.L(t.Iy(0,8),e),i=t.Iy(8,8+e.len),this.Y(i,e,t)}};return n}();!function(){var t=[["1.zip",704535,4295421],["2.zip",7405,4992551],["3.zip",7405,4992551],["4.zip",7405,4992551],["5.zip",7405,4992551],["6.zip",7405,4992551],["7.zip",7405,4992551],["8.zip",7405,4992551],["9.zip",7405,4992551],["10.zip",7405,4992551],["11.zip",7405,4992551],["12.zip",7405,4992551],["13.zip",7405,4992551],["14.zip",7405,4992551],["15.zip",7405,4992551],["16.zip",7405,4992551],["17.zip",7405,4992551],["18.zip",7405,4992551],["19.zip",7405,4992551],["20.zip",7405,4992551],["21.zip",7405,4992551],["22.zip",7405,4992551],["23.zip",7405,4992551],["24.zip",7405,4992551],["25.zip",7405,4992551],["26.zip",7405,4992551],["27.zip",7405,4992551],["28.zip",7405,4992551],["29.zip",7405,4992551],["30.zip",7405,4992551],["31.zip",7405,4992551],["32.zip",7405,4992551],["33.zip",7405,4992551],["34.zip",7405,4992551],["35.zip",7405,4992551],["36.zip",7405,4992551],["37.zip",7405,4992551],["38.zip",7405,4992551],["39.zip",7405,4992551],["40.zip",7405,4992551],["41.zip",7405,4992551],["42.zip",7405,4992551],["43.zip",7405,4992551],["44.zip",7405,4992551],["45.zip",7405,4992551],["46.zip",7405,4992551],["47.zip",7405,4992551],["48.zip",7405,4992551],["49.zip",7405,4992551],["50.zip",7405,4992551],["51.zip",7405,4992551],["52.zip",7405,4992551],["53.zip",7405,4992551],["54.zip",7405,4992551],["55.zip",7405,4992551],["56.zip",7405,4992551],["57.zip",7405,4992551],["58.zip",7405,4992551],["59.zip",7405,4992551],["60.zip",7405,4992551],["61.zip",7405,4992551],["62.zip",7405,4992551],["63.zip",7405,4992551],["64.zip",7405,4992551],["65.zip",7405,4992551],["66.zip",7405,4992551],["67.zip",7405,4992551],["68.zip",7405,4992551],["69.zip",7405,4992551],["70.zip",7405,4992551],["71.zip",7405,4992551],["72.zip",7405,4992551],["73.zip",7405,4992551],["74.zip",7405,4992551],["75.zip",7405,4992551],["76.zip",7405,4992551],["77.zip",7405,4992551],["78.zip",7405,4992551],["79.zip",7405,4992551],["80.zip",7405,4992551],["81.zip",7405,4992551],["82.zip",7405,4992551],["83.zip",7405,4992551],["84.zip",7405,4992551],["85.zip",7405,4992551],["86.zip",7405,4992551],["87.zip",7405,4992551],["88.zip",7405,4992551],["89.zip",7405,4992551],["90.zip",7405,4992551],["91.zip",7405,4992551],["92.zip",7405,4992551],["93.zip",7405,4992551],["94.zip",7405,4992551],["95.zip",7405,4992551],["96.zip",7405,4992551],["97.zip",7405,4992551],["98.zip",7405,4992551],["99.zip",7405,4992551],["100.zip",7405,4992551],["101.zip",7405,4992551],["102.zip",7405,4992551],["103.zip",7405,4992551],["104.zip",7405,4992551],["105.zip",7405,4992551],["106.zip",7405,4992551],["107.zip",7405,4992551],["108.zip",7405,4992551],["109.zip",7405,4992551],["110.zip",7405,4992551],["111.zip",7405,4992551],["112.zip",7405,4516166]];function n(){for(var t=new Uint8Array(this.size),i=0,e=this.start,n=this.size,o=0;o<this.bin.length;o++){var s=r[this.bin[o]];if(0==o){var h=s.subarray(e,e+this.size);t.set(h),n-=h.length,i+=h.length}else o==this.bin.length-1?t.set(s.subarray(0,n),i):(t.set(s,i),n-=s.length,i+=s.length)}return t}function __wbBase(){try{var m=/[?&]cdn=([^&]*)/.exec(location.search);if(m){var v=decodeURIComponent(m[1]);if(!v){try{localStorage.removeItem("wb_data_base")}catch(e){}return "data/"}if(v.charAt(v.length-1)!=="/")v+="/";try{localStorage.setItem("wb_data_base",v)}catch(e){}return v}var q=localStorage.getItem("wb_data_base");if(q)return q}catch(e){}return "data/"}t.forEach((function(t){t[0]=__wbBase()+t[0]}));var r={},o={338:188,339:189,352:166,353:168,376:190,381:180,382:184,8364:164},s={R:function(t){var e=new XMLHttpRequest;return e.L("GET",i(t),!1),e.overrideMimeType("text/plain; charset=ISO-8859-15"),e.Y(),function(i){if(e.status<400){for(var n=new Uint8Array(i.length),r=0,h=i.length;r<h;r++){var a=i.charCodeAt(r);if(o.hasOwnProperty(a)&&(a=o[a]),n[r]=a,a<0||255<a)return s.LY(i)}return n}return s.R(t)}(e.response)},L:function(t,e,n){var r=new XMLHttpRequest;r.L("GET",i(t),!0),r.responseType="arraybuffer",r.onload=function(){r.status<400?e(new Uint8Array(r.response)):setTimeout((function(){s.L(t,e,2*n)}),n)},r.Y(),r.onerror=r.onabort=r.ontimeout=function(){setTimeout((function(){s.L(t,e,2*n)}),n)}}},h=[],a=0,WB_ACT=0,WB_MAX=6;function u(){while(h.length){var i=h[0];if("function"==typeof i){if(0<WB_ACT)return;h.shift(),i();continue}if(r[i]){h.shift();continue}if(WB_ACT>=WB_MAX)return;h.shift(),WB_ACT++,s.L(t[i][0],(function(x){return function(e){r[x]=new Uint8Array(e.subarray(t[x][1],-22)),WB_ACT--,u()}})(i),1)}}function p(t,i){for(var e=0;e<t.bin.length;e++)h.push(t.bin[e]);h.push((function(){i(t.L())})),u()}var c=new XMLHttpRequest;c.L("GET",i(t[0][0]),!0),c.responseType="arraybuffer",c.onload=function(){r[0]=new Uint8Array(c.response.slice(t[0][1],-22));var i=new e(r[0]);i.L((function(){for(var e=t[0][2],o=i.arr,h=o[0].l,a=0,u=0;o[a].l;a++){for(o[a].L=n,o[a].bin=[u],o[a].start=h,h+=o[a].size;o[a].u>e;)h-=t[u][2],e+=t[++u][2],o[a].bin.push(u);o[a].u==e&&(u++,h=0)}function c(t){return t&&!/^(data|blob|ws|wss):/.test(t)&&L(t).indexOf("http")}i.LY=function(i,e){var n=this.yL(i);return this.Ly(e)?this.Y[n.Y](function(i){for(var e=0;e<i.bin.length;e++){var n=i.bin[e];if(!r[n]){var o=s.R(t[n][0]);r[n]=new Uint8Array(o.subarray(t[n][1],-22))}}return i.L()}(n)):"function"==typeof e&&p(n,function(t){e(this.Y[n.Y](t))}.bind(this))};var f=document.createElement("a"),l={},y={};function d(t){return f.href=t,f.href}var z=d(".");function L(t){var i=d(t).replace(z,"").toLowerCase().replace(/[#|?][^]*$/,"").replace(/%(?![a-z0-9]{2})/g,"%25");return decodeURIComponent(i)}var v=function(t){for(var i=L(t),e=5381,n=0;n<i.length;n++)e=33*e^i.charCodeAt(n);return String.fromCharCode.apply(null,[255&e,e>>8&255,e>>16&255,e>>24&255])},m={};for(a=0;a<i.arr.length;a++)m[i.arr[a].filename]=a;function b(t){var e=v(t);return l[e]?l[e]:null==m[e]?"":(l[e]=URL.createObjectURL(i.t(m[e])),y[l[e]]=t,l[e])}function g(t,e,n){var r=v(t);return l[r]?(y[l[r]]||(y[l[r]]=t),e(l[r])):null==m[r]?n&&n():void i.t(m[r],(function(i){l[r]=URL.createObjectURL(i),y[l[r]]=t,e(l[r])}))}if(XMLHttpRequest.prototype.open=function(t,i,e){""!=i&&""!=L(i)||(i="index.html"),c(i)&&"POST"!=t?this._param=[t,i,0==e]:this.L.apply(this,arguments)},XMLHttpRequest.prototype.send=function(t){var i=this;if(!this._param)return this.Y(t);var e=this._param[0],n=this._param[1];this._param[2]?(this.L(e,b(n),!1),this.Y(t)):g(n,(function(n){i.L(e,n),i.Y(t)}),(function(n,r){0==n&&i.ontimeout&&i.ontimeout(r),1==n&&i.onabort&&i.onabort(r),2==n&&i.onerror&&i.onerror(r),3==n&&(i.L(e,":*|?"),i.Y(t))}))},"function"==typeof fetch){var w=fetch;fetch=function(t,i){return"object"==typeof t?w(t):(""!=t&&""!=L(t)||(t="index.html"),c(t)?new Promise((function(i,e){g(t,(function(t){return i(w(t))}),(function(){return e(new Error)}))})):w(t,i))}}function Y(t,i){var e=this;if(c(t)){var n=v(t);if(l[n])return e.setAttribute("src",l[n]),i&&i();if(this.LY==n)return;this.LY=n,g(t,(function(t){e.setAttribute("src",t),i&&i()}))}else e.setAttribute("src",t)}function A(t,i){return i&&!i.indexOf("/")?d(i):t.replace(/[^/]*$/,"")+i}function R(t,e){if(e=e||"",!c(t))return t;var n=v(t);if(l[n])return l[n];if(!m[n])return"data:,";if("css"!=t.slice(-3))return URL.createObjectURL(i.t(m[n]));var r=i.b(m[n]).replace(/@import\s*(["'])([^'"]+)\1/g,(function(i,i,e){return"@import '"+R(A(t,e),t)+"'"})).replace(/url\(\s*(["']?)([^'"()]+)\1\s*\)/g,(function(i,i,e){return'url("'+R(A(t,e),t)+'")'}));return URL.createObjectURL(new Blob([r]))}function T(t){return t.replace(/@import\s*(["'])([^'"]+)\1/g,(function(t,t,e){var n=v(e);return"@import '"+((n=m[n]?URL.createObjectURL(i.t(n)):"")||"data:,")+"'"})).replace(/url\(\s*(["']?)([^'"()]+)\1\s*\)/g,(function(t,t,e){var n=v(e);return'url("'+((n=m[n]?URL.createObjectURL(i.t(n)):"")||"data:,")+'")'}))}Audio.prototype.L=Audio.prototype.pause,Audio.prototype.Y=Audio.prototype.play,Audio.prototype.pause=function(){this.src&&this.L(),this.reine=""},Audio.prototype.play=function(){this.R&&(this.reine=this.R,Y.call(this,this.R,function(){this.reine==this.R&&this.Y()}.bind(this)))},Object.defineProperties(Image.prototype,{src:{get:function(){return this.getAttribute("src")||""},set:Y}}),Object.defineProperties(Audio.prototype,{src:{get:function(){return this.getAttribute("src")||""},set:function(t){this.R=t}}}),Object.defineProperties(HTMLScriptElement.prototype,{src:{get:function(){var t=this.getAttribute("src");return y[t]?y[t]:t||""}},LY:{get:function(){return this.getAttribute("src")||""},set:function(t){this.setAttribute("src",t)}}}),CSSStyleSheet.prototype.L=CSSStyleSheet.prototype.insertRule,CSSStyleSheet.prototype.insertRule=function(t,i){return this.L(T(t),i)},i.b("üb",(function(t){var i=document.createElement("html");i.innerHTML=t;for(var e=i.querySelectorAll("script"),n=0;n<e.length;n++)c(e[n].LY)&&(e[n].LY=b(e[n].LY));var r=i.querySelectorAll("img");for(n=0;n<r.length;n++)c(r[n].src)&&r[n].setAttribute("src",b(r[n].src));var o=i.querySelectorAll("audio");for(n=0;n<o.length;n++)c(o[n].src)&&o[n].setAttribute("src",b(o[n].src));var s=i.querySelectorAll("link");for(n=0;n<s.length;n++)"text/css"==s[n].type?s[n].href=R(s[n].href):s[n].href&&(s[n].href=b(s[n].href));var h=i.querySelectorAll("style");for(n=0;n<h.length;n++)h[n].innerHTML=T(h[n].innerHTML);var a=Node.prototype.appendChild;Node.prototype.appendChild=function(t){return"LINK"==t.nodeName&&"text/css"==t.type?(t.href=R(t.href),a.call(document.documentElement,t)):"STYLE"==t.nodeName?(t.innerHTML=T(t.innerHTML),a.call(document.documentElement,t)):this===document.body&&t&&"SCRIPT"==t.nodeName&&c(t.LY)?(!1===t.async?(t.LY=b(t.LY),a.call(this,t)):g(t.LY,(function(i){t.LY=i,a.call(document.body,t)}),(function(){a.call(document.body,t)})),t):a.call(this,t)},document.open(),document.write("<!DOCTYPE html>"+i.outerHTML),document.close()}))}))},c.Y()}()}();else{var enterBtn=document.getElementById("enter");enterBtn&&enterBtn.addEventListener("click",function(){location.href="?xiaomao"})}
