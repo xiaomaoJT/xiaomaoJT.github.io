@@ -67,3 +67,10 @@ button:focus {
   outline: none;
   background-color: #5e3370;
 }
+
+.entry-tip {
+  text-align: center;
+  color: #666;
+  font-size: 1rem;
+  margin: 0 0 1rem;
+}
