@@ -2,11 +2,11 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
  * 一、金手指自动填充：公共事件 id=100（'bbb'）里
  *      103 输入数字(变量1480)  →  111 条件分支: 变量1480 == 828266
  *    把「输入数字」换成「设置变量=828266」，密码由游戏自动填入，键盘框不再出现。
- * 二、金手指扩展：给「妹妹状态」子菜单加 3 个拉满项，顶级菜单加「★一键全满」。
- * 三、卡死修复：引擎里 command413 会让解释器往回跳，一旦分支里的退出条件不成立，
- *    就会在两条指令间死循环（已实测复现）；skipBranch 走到事件末尾会抛
- *    "Cannot read properties of undefined (reading 'indent')"。
- *    这里加一个看门狗（同一指令重复 300 次即中断事件）+ 给 skipBranch 加上越界保护。
+ * 二、金手指扩展：
+ *    · 顶级菜单加「★逐项拉满」——循环菜单，可逐项勾选（金钱/技能Pt/信赖/性兴趣/
+ *      心情/性欲/战斗属性），也可以一键全满，选完「返回」才退出。
+ *    · 「妹妹状态」加「★跳时段」——+1/+3 小时，或直接跳到 17:00 / 20:00 / 23:00 / 06:00。
+ * 三、卡死修复：见下方 installEngineFix 的详细说明。
  */
 (function () {
   var TARGET_JSON = /data\/CommonEvents\.json/i;
@@ -34,86 +34,165 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
     return { start: start, end: i, json: text.slice(start, i) };
   }
 
-  function V(indent, varId, value) { return { code: 122, indent: indent, parameters: [varId, varId, 0, 0, value] }; }
+  /* ---------- 指令构造小工具 ---------- */
+  function C(code, indent, params) { return { code: code, indent: indent, parameters: params || [] }; }
+  function V(indent, varId, value) { return C(122, indent, [varId, varId, 0, 0, value]); }
+  function Vadd(indent, varId, delta) { return C(122, indent, [varId, varId, 1, 0, delta]); }
+  function Vsub(indent, varId, delta) { return C(122, indent, [varId, varId, 2, 0, delta]); }
+  function msg(indent, text) { return [C(101, indent, ['', 0, 0, 2]), C(401, indent, [text])]; }
+
+  /* 时间 +N 小时：自己做进位。
+     不能靠 CE217 处理，它的 var5 进位只有一层 if（满 60 减一次），
+     一次加 180 分钟只会计 1 小时、留下 var5=120。 */
+  function addHours(indent, delta) {
+    return [
+      Vadd(indent, 4, delta),
+      C(111, indent, [1, 4, 0, 24, 1]),        // if 时 >= 24
+      Vsub(indent + 1, 4, 24),
+      Vadd(indent + 1, 6, 1),                  //   星期 +1
+      C(111, indent + 1, [1, 6, 0, 7, 1]),     //   if 星期 >= 7
+      V(indent + 2, 6, 0),
+      C(412, indent + 1),
+      C(412, indent)
+    ];
+  }
+
+  /* ---------- 构建金手指菜单 ----------
+   * 引擎约束（本移植版实测，直接决定这里的缩进怎么写）：
+   *   · 102 选项的 _branch 键 = 触发 setupChoices 的那条指令的 indent，
+   *     而 402 读的是自己的 indent —— 所以 102 与它的 402 必须同一缩进。
+   *   · 113 = 跳出循环（向后扫到配对的 413）；115 = 结束整个事件，不能用来退出循环。
+   *   · 112 = Loop 起点，413 = 回到 Loop 起点。
+   *   · 412 在引擎里不存在，只作结构占位，会被静默跳过。
+   *
+   * 时间跳转改完 var4 后调用 CE217「时间显示」刷新右上角时钟；
+   * 跨凌晨的星期进位由 addHours 自己算（CE217 的进位只支持 +1 小时）。
+   */
+  function buildCheatBody() {
+    var b = [];
+
+    /* ===== 顶层 ===== */
+    b.push(C(102, 2, [['妹妹状态', '状态+金钱', '★逐项拉满'], -2, 0, 2, 0]));
+
+    /* ===== 妹妹状态 ===== */
+    b.push(C(402, 2, [0, '妹妹状态']));
+    b.push(C(102, 3, [['+信赖10', '-信赖10', '+性兴趣10', '妹好心情', '+妹性欲20', '+妹性欲60', '★跳时段'], 1, 0, 2, 0]));
+    b.push(C(402, 3, [0, '+信赖10']));   b.push(Vadd(4, 21, 10));
+    b.push(C(402, 3, [1, '-信赖10']));   b.push(Vsub(4, 21, 10));
+    b.push(C(402, 3, [2, '+性兴趣10'])); b.push(Vadd(4, 22, 10));
+    b.push(C(402, 3, [3, '妹好心情']));  b.push(V(4, 23, 8));
+    b.push(C(402, 3, [4, '+妹性欲20'])); b.push(Vadd(4, 102, 20));
+    b.push(C(402, 3, [5, '+妹性欲60'])); b.push(Vadd(4, 102, 60));
+
+    /* --- ★跳时段（单次选择，选完即走） --- */
+    b.push(C(402, 3, [6, '★跳时段']));
+    b.push(C(102, 4, [[
+      '+1 小时', '+3 小时',
+      '→ 17:00 傍晚', '→ 20:00 夜里', '→ 23:00 深夜', '→ 06:00 清晨',
+      '返回'
+    ], -2, 0, 2, 0]));
+    // 相对跳
+    b.push(C(402, 4, [0, '+1 小时'])); b.push.apply(b, addHours(5, 1));
+    b.push(C(402, 4, [1, '+3 小时'])); b.push.apply(b, addHours(5, 3));
+    // 绝对跳：直接定小时，分钟归零
+    b.push(C(402, 4, [2, '→ 17:00 傍晚'])); b.push(V(5, 4, 17)); b.push(V(5, 5, 0));
+    b.push(C(402, 4, [3, '→ 20:00 夜里'])); b.push(V(5, 4, 20)); b.push(V(5, 5, 0));
+    b.push(C(402, 4, [4, '→ 23:00 深夜'])); b.push(V(5, 4, 23)); b.push(V(5, 5, 0));
+    b.push(C(402, 4, [5, '→ 06:00 清晨'])); b.push(V(5, 4, 6));  b.push(V(5, 5, 0));
+    b.push(C(402, 4, [6, '返回']));         b.push(C(0, 5));
+    b.push(C(404, 4));
+    b.push(C(117, 4, [217]));   // 刷新右上角时钟（也负责跨时/跨日的进位）
+    b.push.apply(b, msg(4, '时间已调整~'));
+    b.push(C(404, 3));
+    b.push(C(230, 3, [20]));
+    b.push.apply(b, msg(3, '保存读取后生效~'));
+
+    /* ===== 状态+金钱 ===== */
+    b.push(C(402, 2, [1, '状态+金钱']));
+    b.push(Vadd(3, 7, 82828));
+    b.push(Vadd(3, 10, 100));
+    b.push(Vadd(3, 170, 100));
+    b.push(Vadd(3, 171, 100));
+    b.push(Vadd(3, 172, 100));
+    b.push(Vadd(3, 173, 100));
+    b.push(Vadd(3, 174, 100));
+    b.push.apply(b, msg(3, '保存读取后生效~'));
+
+    /* ===== ★逐项拉满（循环菜单，可连续勾选多项） ===== */
+    b.push(C(402, 2, [2, '★逐项拉满']));
+    b.push(C(112, 3));                                     // Loop
+    b.push(C(102, 4, [[
+      '金钱 999999', '技能Pt 999', '信赖 9999', '性兴趣 9999',
+      '心情 10', '性欲 120', '战斗属性 999', '★全部拉满', '返回'
+    ], -2, 0, 2, 0]));
+    b.push(C(402, 4, [0, '金钱 999999']));   b.push(V(5, 7, 999999));
+    b.push(C(402, 4, [1, '技能Pt 999']));    b.push(V(5, 10, 999));
+    b.push(C(402, 4, [2, '信赖 9999']));     b.push(V(5, 21, 9999));
+    b.push(C(402, 4, [3, '性兴趣 9999']));   b.push(V(5, 22, 9999));
+    b.push(C(402, 4, [4, '心情 10']));       b.push(V(5, 23, 10));
+    b.push(C(402, 4, [5, '性欲 120']));      b.push(V(5, 102, 120));
+    b.push(C(402, 4, [6, '战斗属性 999']));
+    b.push(V(5, 170, 999)); b.push(V(5, 171, 999)); b.push(V(5, 172, 999));
+    b.push(V(5, 173, 999)); b.push(V(5, 174, 999));
+    b.push(C(402, 4, [7, '★全部拉满']));
+    b.push(V(5, 7, 999999)); b.push(V(5, 10, 999));
+    b.push(V(5, 21, 9999));  b.push(V(5, 22, 9999));
+    b.push(V(5, 23, 10));    b.push(V(5, 102, 120));
+    b.push(V(5, 170, 999)); b.push(V(5, 171, 999)); b.push(V(5, 172, 999));
+    b.push(V(5, 173, 999)); b.push(V(5, 174, 999));
+    b.push(C(402, 4, [8, '返回']));          b.push(C(113, 5));   // 113 = 跳出循环
+    b.push(C(404, 4));
+    b.push(C(413, 3));                                     // Repeat
+    b.push.apply(b, msg(3, '已应用（保存读取后生效~）'));
+
+    /* ===== 取消分支 ===== */
+    b.push(C(403, 2, [6, null]));
+    b.push(C(0, 3));
+    b.push(C(404, 2));
+    b.push(C(0, 2));
+
+    return b;
+  }
 
   /* ---------- 金手指扩展：改写 CE100 的指令列表 ---------- */
   function patchCheat(list) {
     var notes = [];
 
-    // 1) 自动填充：输入数字(1480,6) → 设置变量 1480 = 828266
+    // 0) 密码自动填充：输入数字(1480) → 直接写 1480 = 828266
     for (var i = 0; i < list.length; i++) {
       var c = list[i];
       if (c.code === 103 && c.parameters && c.parameters[0] === 1480) {
-        list[i] = { code: 122, indent: c.indent, parameters: [1480, 1480, 0, 0, 828266] };
+        list[i] = C(122, c.indent, [1480, 1480, 0, 0, 828266]);
         notes.push('自动填充回想码');
         break;
       }
     }
 
-    // 2) 顶级菜单加「★一键全满」
-    var topIdx = -1;
-    for (var j = 0; j < list.length; j++) {
-      var t = list[j];
-      if (t.code === 102 && t.indent === 2 && t.parameters && t.parameters[0] &&
-          t.parameters[0][0] === '妹妹状态') { topIdx = j; break; }
-    }
-    if (topIdx >= 0) {
-      var top = list[topIdx];
-      if (top.parameters[0].indexOf('★一键全满') < 0) top.parameters[0].push('★一键全满');
-      // 找到该分支的取消分支(403@2)，在它前面插入新分支
-      var ins = -1;
-      for (var k = topIdx + 1; k < list.length; k++) {
-        if (list[k].code === 403 && list[k].indent === 2) { ins = k; break; }
-        if (list[k].code === 404 && list[k].indent === 2) { ins = k; break; }
-      }
-      if (ins > 0) {
-        var branch = [
-          { code: 402, indent: 2, parameters: [2, '★一键全满'] },
-          V(3, 7, 999999),   // 所持金（游戏自身封顶值）
-          V(3, 10, 999),     // 技能Pt
-          V(3, 21, 9999),   // 信赖（体调上限）
-          V(3, 22, 9999),   // 性兴趣上限
-          V(3, 23, 10),     // 心情上限（兄LOVE）
-          V(3, 102, 120),   // 性欲/发情度上限
-          V(3, 170, 999), V(3, 171, 999), V(3, 172, 999), V(3, 173, 999), V(3, 174, 999),
-          { code: 101, indent: 3, parameters: ['', 0, 0, 2] },
-          { code: 401, indent: 3, parameters: ['★ 已全部拉满（保存读取后生效~）'] },
-          { code: 0, indent: 3, parameters: [] }
-        ];
-        Array.prototype.splice.apply(list, [ins, 0].concat(branch));
-        notes.push('新增顶级项 ★一键全满');
+    // 1) 定位密码校验 111(变量1480 == 828266)，把它的 then 分支整段重建
+    var i111 = -1;
+    for (var k = 0; k < list.length; k++) {
+      var q = list[k];
+      if (q.code === 111 && q.parameters && q.parameters[0] === 1 &&
+          q.parameters[1] === 1480 && String(q.parameters[3]) === '828266') {
+        i111 = k; break;
       }
     }
+    if (i111 < 0) return notes;
 
-    // 3) 「妹妹状态」子菜单加 3 个拉满项
-    var subIdx = -1;
-    for (var m = 0; m < list.length; m++) {
-      var s = list[m];
-      if (s.code === 102 && s.indent === 3 && s.parameters && s.parameters[0] &&
-          s.parameters[0][0] === '+信赖10') { subIdx = m; break; }
+    // 2) 找与它配对的 else（同缩进的 411）
+    var ind = list[i111].indent;
+    var iElse = -1;
+    for (var m = i111 + 1; m < list.length; m++) {
+      if (list[m].code === 411 && list[m].indent === ind) { iElse = m; break; }
     }
-    if (subIdx >= 0) {
-      var sub = list[subIdx];
-      var adds = [['★信赖MAX', 21, 9999], ['★性兴趣MAX', 22, 9999], ['★性欲MAX', 102, 120]];
-      var base = sub.parameters[0].length;
-      for (var a = 0; a < adds.length; a++) {
-        if (sub.parameters[0].indexOf(adds[a][0]) < 0) sub.parameters[0].push(adds[a][0]);
-      }
-      var ins2 = -1;
-      for (var n = subIdx + 1; n < list.length; n++) {
-        if (list[n].code === 404 && list[n].indent === 3) { ins2 = n; break; }
-      }
-      if (ins2 > 0) {
-        var blk = [];
-        for (var b = 0; b < adds.length; b++) {
-          blk.push({ code: 402, indent: 3, parameters: [base + b, adds[b][0]] });
-          blk.push(V(4, adds[b][1], adds[b][2]));
-          blk.push({ code: 0, indent: 4, parameters: [] });
-        }
-        Array.prototype.splice.apply(list, [ins2, 0].concat(blk));
-        notes.push('妹妹状态新增 3 个拉满项');
-      }
-    }
+    if (iElse < 0) return notes;
+
+    // 3) 用新菜单替换整段 then 分支（幂等：重复执行结果一致）
+    var body = buildCheatBody();
+    Array.prototype.splice.apply(list, [i111 + 1, iElse - (i111 + 1)].concat(body));
+
+    notes.push('妹妹状态新增 ★跳时段');
+    notes.push('一键全满改为 ★逐项拉满（可连续勾选）');
     return notes;
   }
 
