@@ -354,26 +354,98 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       return orig111.apply(this, arguments);
     };
 
-    // 2) 兜底护栏：同一条指令一帧内重复过多 → 让出本帧
+    // 2) 兜底护栏：同一条指令一帧内重复过多 → 让出本帧；持续空转 → 强制结束该解释器（防卡死）
     var origExec = P.executeCommand;
+    P.__wbTerminate = function () {
+      try {
+        if (typeof this.clear === 'function') this.clear();
+        this._list = null;
+        this._index = 0;
+        this._waitMode = '';
+        this._waitCount = 0;
+        this._childInterpreter = null;
+        if (typeof window !== 'undefined' && window.__wbNotify) {
+          window.__wbNotify('检测到卡死循环，已自动恢复（可继续操作，无需刷新）');
+        }
+      } catch (e) {}
+    };
     P.executeCommand = function () {
       var fr = (typeof Graphics !== 'undefined' && Graphics.frameCount) || 0;
       var idx = this._index;
-      if (this.__wbF !== fr) { this.__wbF = fr; this.__wbLoopIdx = -1; this.__wbLoopN = 0; }
+      if (this.__wbF !== fr) { this.__wbF = fr; this.__wbLoopIdx = -1; this.__wbLoopN = 0; this.__wbSpinF = 0; }
       if (this.__wbLoopIdx === idx) {
         if (++this.__wbLoopN > 2000) {
           this.__wbLoopN = 0;
           this.__wbLoopIdx = -1;
+          // 同一指令本帧空转 2000+ 次 = 真·死循环（主线程不会冻结，但事件永远跑不完、
+          // 占用解释器导致点击无反应）。连续空转超过约 2 秒就强制结束该解释器，
+          // 让玩家立刻能继续操作，不必刷新页面。
+          if (!this.__wbSpinF) this.__wbSpinF = fr;
+          else if (fr - this.__wbSpinF > 120) {
+            this.__wbSpinF = 0;
+            this.__wbTerminate();
+            return false;
+          }
           return false;            // 让出本帧
         }
       } else {
         this.__wbLoopIdx = idx;
         this.__wbLoopN = 1;
+        this.__wbSpinF = 0;
       }
       return origExec.apply(this, arguments);
     };
 
-    console.log('[fix] 卡死修复已装载：计数器死循环放宽 + 输入等待循环每帧只判一次 + 同帧重复护栏 + skipBranch 越界保护 + 数值锁定');
+    // 3) 「Now Loading」遮罩卡死看门狗：遮罩持续显示超过阈值就强制关闭，恢复输入
+    //    （资源解码卡住时 _loadingCount 一直 >0、遮罩 opacity=1，会挡住全部点击）
+    try {
+      if (typeof Graphics !== 'undefined' && Graphics._upperCanvas && !window.__wbLoadWatch) {
+        window.__wbLoadWatch = true;
+        setInterval(function () {
+          try {
+            if (!Graphics._upperCanvas) return;
+            var op = Graphics._upperCanvas.style.opacity;
+            var showing = (op === '1' || op === 1);
+            if (showing && Graphics._loadingCount > 0) {
+              if (!window.__wbLoadStuck) window.__wbLoadStuck = Date.now();
+              else if (Date.now() - window.__wbLoadStuck > 20000) {
+                Graphics.endLoading();
+                window.__wbLoadStuck = 0;
+                if (window.__wbNotify) window.__wbNotify('「Now Loading」遮罩超时，已强制关闭，可继续操作');
+              }
+            } else {
+              window.__wbLoadStuck = 0;
+            }
+          } catch (e) {}
+        }, 1000);
+      }
+    } catch (e) {}
+
+    // 4) 手动强制恢复：结束所有卡住的解释器 + 关闭遮罩 + 清残留（面板「强制恢复」按钮用）
+    window.__wbRecover = function () {
+      var freed = 0;
+      try {
+        if (typeof $gameMap !== 'undefined' && $gameMap) {
+          function kill(ip) {
+            if (ip && ip.isRunning && ip.isRunning()) {
+              if (typeof ip.clear === 'function') ip.clear();
+              ip._list = null; ip._waitMode = ''; ip._waitCount = 0; ip._childInterpreter = null;
+              freed++;
+            }
+          }
+          kill($gameMap._interpreter);
+          if ($gameMap._interpreters) $gameMap._interpreters.forEach(kill);
+          if ($gameMap._commonEvents) $gameMap._commonEvents.forEach(kill);
+        }
+      } catch (e) {}
+      try { if (typeof Graphics !== 'undefined' && Graphics.endLoading) Graphics.endLoading(); } catch (e) {}
+      try { if (typeof $gameMessage !== 'undefined' && $gameMessage && $gameMessage.clear) $gameMessage.clear(); } catch (e) {}
+      try { window.__wbCleanup && window.__wbCleanup(); } catch (e) {}
+      try { window.__wbClearPics && window.__wbClearPics(); } catch (e) {}
+      return freed;
+    };
+
+    console.log('[fix] 卡死修复已装载：计数器死循环放宽 + 输入等待循环每帧只判一次 + 同帧重复护栏 + 持续空转强制结束 + 遮罩卡死看门狗 + skipBranch 越界保护 + 数值锁定 + 手动强制恢复');
     return true;
   }
 
@@ -646,6 +718,17 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
     };
 
     /* ---------- 清理残留：不动剧情，只把画面上的字与图片收干净 ---------- */
+    W.__wbRefreshScene = function () {
+      /* 让当前地图/场景立刻重绘：清掉卡住的图片后调用，合法的背景与立绘会被恢复 */
+      try { if (W.$gameMap && W.$gameMap.requestRefresh) W.$gameMap.requestRefresh(); } catch (e) {}
+      try {
+        var sc = SceneManager._scene;
+        if (sc) {
+          if (sc.refresh) sc.refresh();
+          if (sc._spriteset && sc._spriteset.refresh) sc._spriteset.refresh();
+        }
+      } catch (e) {}
+    };
     W.__wbCleanup = function () {
       var g = W.$gameMessage;
       try { if (g) g.clear(); } catch (e) {}
@@ -659,7 +742,7 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
         shutSub(w, '_numberWindow');
         shutSub(w, '_itemWindow');
         try { w.openness = 0; w._opening = false; w._closing = false; } catch (e) {}
-        try { w._goldWindow.openness = 0; } catch (e) {}
+        try { if (w._goldWindow) w._goldWindow.openness = 0; } catch (e) {}
       }
       try {
         var it = W.$gameMap && W.$gameMap._interpreter;
@@ -667,19 +750,19 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
         var ch = it && it._childInterpreter;
         if (ch && ch._waitMode === 'message') ch._waitMode = '';
       } catch (e) {}
+      /* 残留的“剧情文字/立绘”多半是用 Show Picture 画出来的：清掉图片并立即重绘，
+         合法的背景与立绘会被恢复，只留下真正卡住的那张被清掉 */
+      try { if (W.$gameScreen) W.$gameScreen.clearPictures(); } catch (e) {}
+      try { W.__wbRefreshScene(); } catch (e) {}
       return true;
     };
 
     /* ---------- 清掉屏幕上多余的立绘 / 图片（残留头像是这个原因） ---------- */
     W.__wbClearPics = function () {
+      /* 清掉所有图片（含卡住的立绘/文字图），再让当前地图立即重绘，
+         背景与合法立绘会被恢复，避免清成黑屏 */
       try { if (W.$gameScreen) W.$gameScreen.clearPictures(); } catch (e) {}
-      try {
-        var sc = SceneManager._scene;
-        var sp = sc && sc._spriteset;
-        if (sp && sp._pictureContainer) {
-          sp._pictureContainer.children.forEach(function (s) { if (s) s.visible = false; });
-        }
-      } catch (e) {}
+      try { W.__wbRefreshScene(); } catch (e) {}
       return true;
     };
 
@@ -756,6 +839,7 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
         '<div class="row"><button id="wb-clr" class="ghost">\u6e05\u7406\u6b8b\u7559</button>' +
         '<button id="wb-pic" class="ghost">\u6e05\u7acb\u7ed8</button></div>' +
         '<div class="row"><button id="wb-opt" class="ghost">\u9009\u9879\uff1a\u7b2c 1 \u9879</button></div>' +
+        '<div class="row"><button id="wb-rec" class="ghost">\u5f3a\u5236\u6062\u590d\uff08\u5361\u6b7b\u65f6\u7528\uff09</button></div>' +
         '<div class="sec">\u6570\u503c\u9501\u5b9a</div>' +
         '<label><input type="checkbox" data-v="14">\u884c\u52a8\u529b\u4e0d\u51cf</label>' +
         '<label><input type="checkbox" data-v="16">\u7cbe\u529b\u4e0d\u51cf</label>' +
@@ -821,13 +905,13 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
       pop.querySelector('#wb-clr').addEventListener('click', function () {
         if (typeof window.__wbCleanup !== 'function') { say('\u5f15\u64ce\u8fd8\u6ca1\u5c31\u7eea'); return; }
         window.__wbCleanup();
-        say('\u5df2\u6e05\u6389\u6b8b\u7559\u6587\u5b57');
+        say('\u5df2\u6e05\u7406\u6b8b\u7559\u6587\u5b57\u4e0e\u7acb\u7ed8\uff0c\u5e76\u5237\u65b0\u753b\u9762');
       });
 
       pop.querySelector('#wb-pic').addEventListener('click', function () {
         if (typeof window.__wbClearPics !== 'function') { say('\u5f15\u64ce\u8fd8\u6ca1\u5c31\u7eea'); return; }
         window.__wbClearPics();
-        say('\u5df2\u6e05\u6389\u5c4f\u5e55\u4e0a\u7684\u7acb\u7ed8 / \u56fe\u7247\n\u5982\u679c\u628a UI \u56fe\u4e5f\u6e05\u4e86\uff0c\u5207\u6362\u4e00\u6b21\u5730\u56fe\u5c31\u6062\u590d');
+        say('\u5df2\u6e05\u6389\u5c4f\u5e55\u4e0a\u7684\u7acb\u7ed8/\u56fe\u7247\uff0c\u5e76\u5237\u65b0\u753b\u9762\uff08\u80cc\u666f\u4f1a\u6062\u590d\uff09\u5982\u679c\u628a UI \u56fe\u4e5f\u6e05\u4e86\uff0c\u5207\u6362\u4e00\u6b21\u5730\u56fe\u5c31\u6062\u590d');
       });
 
       optBtn.addEventListener('click', function () {
@@ -842,6 +926,13 @@ var e,LTT=((e={A:function(){this.C=0}}).A.prototype.LY=function(t){this.F&&this.
 
       if (window.__wbFFChoice) optBtn.textContent = '\u9009\u9879\uff1a\u6700\u540e 1 \u9879';
       window.__wbFFBadge();
+
+      // 强制恢复：结束所有卡住的事件解释器 + 关闭遮罩 + 清残留，无需刷新页面
+      pop.querySelector('#wb-rec').addEventListener('click', function () {
+        if (typeof window.__wbRecover !== 'function') { say('\u5f15\u64ce\u8fd8\u6ca1\u5c31\u7eea'); return; }
+        var n = window.__wbRecover();
+        say('\u5df2\u5f3a\u5236\u6062\u590d ' + n + ' \u4e2a\u5361\u4f4f\u7684\u4e8b\u4ef6\uff0c\u53ef\u7ee7\u7eed\u64cd\u4f5c\uff08\u65e0\u9700\u5237\u65b0\uff09');
+      });
 
       // 导出：把所有 "RPG " 开头的键（存档槽 / Global / Config）拼成 JSON
       pop.querySelector('#wb-exp').addEventListener('click', function () {
